@@ -1,6 +1,6 @@
 # MCLDNN — Automatic Modulation Recognition on RML2016.10a
 
-Research project based on the [AMR-Benchmark](https://github.com/Richardzhangxx/AMR-Benchmark) by Richardzhangxx.
+Research project based on the [AMR-Benchmark](https://github.com/Richardzhangxx/AMR-Benchmark) by Richardzhangxx, with a cleaned-up `src/` implementation for training, evaluation, and experiment tracking.
 
 ## Project Focus
 
@@ -15,6 +15,18 @@ This repository implements and experiments with the **MCLDNN** model for Automat
 | QAM64 | Quadrature Amplitude Modulation |
 
 An **ablation study** removing BPSK (4-class: QPSK, 8PSK, QAM16, QAM64) is maintained in parallel.
+
+## About `src/`
+
+The `src/` folder is the main code path for this repository. It contains the maintained implementation that drives the current experiments:
+
+- `src/train.py` handles training from a YAML config, including checkpointing and resume support.
+- `src/evaluate.py` runs single-experiment evaluation and side-by-side comparison of multiple runs.
+- `src/dataset.py` loads the filtered dataset variants used by the 4-class and 5-class experiments.
+- `src/models/` contains the active MCLDNN model definition used by the project.
+- `src/utils/` provides shared helpers for metrics, plots, and reproducibility.
+
+If you want to understand or modify the current workflow, start with `src/train.py` and `src/evaluate.py`, then follow the imports into `src/dataset.py`, `src/models/`, and `src/utils/`.
 
 ---
 
@@ -89,15 +101,15 @@ AMR/
 │   ├── exp_4class_ablation.yaml     # Ablation — BPSK removed
 │   └── exp_5class_ablation.yaml     # Placeholder for future variants
 │
-├── src/
+├── src/                             # Main maintained implementation
 │   ├── dataset.py                   # Class-filtered data loader
 │   ├── train.py                     # Training entry point
 │   ├── evaluate.py                  # Evaluation + comparison
 │   ├── models/
-│   │   └── mcldnn.py               # MCLDNN (TF2/Keras3)
+│   │   └── mcldnn.py                # MCLDNN (TF2/Keras3)
 │   └── utils/
-│       ├── mltools.py              # Plots and metrics
-│       └── seed.py                 # Reproducibility seeds
+│       ├── mltools.py               # Plots and metrics
+│       └── seed.py                  # Reproducibility seeds
 │
 ├── notebooks/
 │   ├── train_5class_baseline.ipynb  # Kaggle training notebook
@@ -147,9 +159,9 @@ All runs are documented in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Citation
+## Credits
 
-If you use this work, please also cite the original AMR-Benchmark:
+This project preserves and builds on the original AMR-Benchmark work by Richardzhangxx. Please credit the upstream repository if you reuse this code or ideas:
 
 ```bibtex
 @misc{amr-benchmark,
@@ -162,3 +174,5 @@ If you use this work, please also cite the original AMR-Benchmark:
 
 Original MCLDNN paper:
 > Meng, F., Chen, P., Wu, L., & Wang, X. (2019). Automatic modulation classification: A deep learning enabled approach. *IEEE Transactions on Vehicular Technology*, 68(11), 10760-10772.
+
+The legacy upstream code is kept under `RML201610a/MCLDNN/` as a reference implementation.
