@@ -1,0 +1,41 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN Baseline (PRIMARY MODEL)
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Dataset : RML2016.10a (filtered to 5 classes)
+# Model   : MCLDNN — identical architecture to AMR-Benchmark original
+# Purpose : Primary model for all publications and reports
+# =============================================================================
+
+experiment:
+  name: "5class_baseline"
+  description: "MCLDNN on 5 selected PSK/QAM classes — primary publication model"
+  track: "5class"
+  seed: 2016
+
+dataset:
+  # On Kaggle: set this to your Kaggle dataset input path, e.g.:
+  #   /kaggle/input/rml2016-5class/RML2016.10a_5class.pkl
+  # Locally: set to your absolute path
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+training:
+  epochs: 10000
+  batch_size: 400
+  early_stopping_patience: 100
+  reduce_lr_patience: 15
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+
+output:
+  base_dir:        "experiments/5class_baseline"
+  checkpoint_path: "experiments/5class_baseline/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_baseline/logs"
+  figure_dir:      "experiments/5class_baseline/figures"
+  result_dir:      "experiments/5class_baseline/results"

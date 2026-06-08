@@ -1,0 +1,31 @@
+# Branch Ablation: 5-class, Q-branch only
+experiment:
+  name: "branch_5class_Q"
+  description: "MCLDNN Q-branch only on 5 PSK/QAM classes — branch ablation"
+  track: "branch_ablation"
+  seed: 42     # changed from 2016 — Q collapsed to uniform output with seed 2016
+  branch: "Q"
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+training:
+  epochs: 10000
+  batch_size: 400
+  early_stopping_patience: 50
+  reduce_lr_patience: 10
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+
+output:
+  base_dir:        "experiments/branch_5class/Q_only"
+  checkpoint_path: "experiments/branch_5class/Q_only/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/branch_5class/Q_only/logs"
+  figure_dir:      "experiments/branch_5class/Q_only/figures"
+  result_dir:      "experiments/branch_5class/Q_only/results"

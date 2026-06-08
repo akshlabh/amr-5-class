@@ -1,0 +1,31 @@
+# Branch Ablation: 5-class, I-branch only
+experiment:
+  name: "branch_5class_I"
+  description: "MCLDNN I-branch only on 5 PSK/QAM classes — branch ablation"
+  track: "branch_ablation"
+  seed: 2016
+  branch: "I"
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+training:
+  epochs: 10000
+  batch_size: 400
+  early_stopping_patience: 50
+  reduce_lr_patience: 10
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+
+output:
+  base_dir:        "experiments/branch_5class/I_only"
+  checkpoint_path: "experiments/branch_5class/I_only/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/branch_5class/I_only/logs"
+  figure_dir:      "experiments/branch_5class/I_only/figures"
+  result_dir:      "experiments/branch_5class/I_only/results"

@@ -1,0 +1,62 @@
+# =============================================================================
+# Experiment: 4-class MCLDNN — Full model (branch ablation baseline)
+# =============================================================================
+# Strategy for research-grade comparability:
+#   split_file  → All 4-class variants share an IDENTICAL train/val/test split.
+#                 The file is auto-generated on the first run (seed=2016) and
+#                 loaded by every subsequent run — so seed only controls weight
+#                 initialisation, not which samples go to the test set.
+#   l2_dense    → Reduced from 1e-3 to 1e-4.  The 4-class gradient signal
+#                 (QPSK/8PSK/QAM16/QAM64 — no BPSK anchor) is weaker than
+#                 5-class; the original 1e-3 penalty overwhelms it at init and
+#                 the model collapses to uniform output (val_acc=0.25=1/4).
+#   seed        → 2016 for split generation (first run only) and weight init.
+# =============================================================================
+
+experiment:
+  name: "4class_ablation"
+  description: "MCLDNN full model — 4-class ablation (BPSK removed)"
+  track: "4class"
+  seed: 2016   # weight-init seed only — split is fixed via split_file (seed=2016)
+               # KNOWN TRAINING INSTABILITY: The full 4-class MCLDNN fails to
+               # converge beyond ~27% val_accuracy for most seeds.
+               # Root cause: vanishing gradients through 124-step BPTT LSTM.
+               # Without BPSK (a strong anchor class), the 4 similar QAM classes
+               # produce near-zero conv-layer gradients at initialization →
+               # the model cannot bootstrap learning and collapses to uniform output.
+               # Seed=42 achieves the best partial escape (~27%) observed.
+               # This instability IS the research finding (see paper §4.3).
+
+dataset:
+  path: "data/RML2016.10a_4class.pkl"
+  classes:
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+# Fixed split: auto-generated on first run, loaded by all subsequent runs.
+# Ensures identical test set across all 4-class variants.
+split_file: "data/split_4class_seed2016.npz"
+transfer_from: "experiments/5class_baseline/checkpoints/best_model.weights.h5"
+transfer_source_classes: 5
+
+training:
+  epochs: 10000
+  batch_size: 400
+  initial_lr: 1.0e-4
+  early_stopping_patience: 100
+  reduce_lr_patience: 15
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  dropout_rate: 0.5
+  snr_weighted: true     # SNR-proportional sample weighting (root-cause fix)
+  l2_lstm: 0.0          # Remove LSTM recurrent regularization (reduces vanishing gradients)
+  l2_dense: 1.0e-4      # Reduced from 1e-3 for 4-class gradient balance
+
+output:
+  base_dir:        "experiments/4class_ablation"
+  checkpoint_path: "experiments/4class_ablation/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/4class_ablation/logs"
+  figure_dir:      "experiments/4class_ablation/figures"
+  result_dir:      "experiments/4class_ablation/results"

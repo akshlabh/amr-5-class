@@ -1,0 +1,44 @@
+# Branch Ablation: 4-class, Q-branch only
+# dropout_rate: 0.3  — reduced from 0.5 for single-branch models.
+#   With only one branch feeding a two-layer Dense head, dropout=0.5 halves
+#   the effective signal twice, starving the weaker Q-channel features on the
+#   hard 4-class problem.  0.3 gives the network enough capacity to learn.
+# See exp_4class_ablation.yaml for split_file / l2_dense strategy.
+experiment:
+  name: "branch_4class_Q"
+  description: "MCLDNN Q-branch only — 4-class ablation"
+  track: "branch_ablation"
+  seed: 2016
+  branch: "Q"
+
+dataset:
+  path: "data/RML2016.10a_4class.pkl"
+  classes:
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+split_file: "data/split_4class_seed2016.npz"
+transfer_from: "experiments/branch_5class/Q_only/checkpoints/best_model.weights.h5"
+transfer_source_classes: 5
+
+training:
+  epochs: 10000
+  batch_size: 400
+  initial_lr: 1.0e-4
+  early_stopping_patience: 100
+  reduce_lr_patience: 15
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  dropout_rate: 0.3
+  snr_weighted: true     # SNR-proportional sample weighting (root-cause fix)
+  l2_lstm: 0.0          # Remove LSTM recurrent regularization (reduces vanishing gradients)
+  l2_dense: 1.0e-4      # Reduced from 1e-3 for 4-class gradient balance
+
+output:
+  base_dir:        "experiments/branch_4class/Q_only"
+  checkpoint_path: "experiments/branch_4class/Q_only/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/branch_4class/Q_only/logs"
+  figure_dir:      "experiments/branch_4class/Q_only/figures"
+  result_dir:      "experiments/branch_4class/Q_only/results"

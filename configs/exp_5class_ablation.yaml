@@ -1,0 +1,54 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN Ablation (FUTURE ARCHITECTURE/HYPERPARAM VARIANT)
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64  (same as baseline)
+# Dataset : RML2016.10a (5-class filtered)
+# Model   : MCLDNN — same architecture; tune this config for future ablations
+#
+# USAGE: Duplicate and rename this file for each new architectural variant.
+#        Change `experiment.name` to something descriptive, e.g.:
+#          "5class_ablation_no-lstm"
+#          "5class_ablation_deeper-conv"
+#          "5class_ablation_batch256"
+#        Change output paths to match the new name.
+#        Do NOT modify exp_5class_baseline.yaml — that is the locked reference.
+#
+# COMPARISON: After training, compare with 4-class ablation using:
+#   python src/evaluate.py --compare \
+#     --configs  configs/exp_5class_baseline.yaml \
+#                configs/exp_4class_ablation.yaml \
+#                configs/exp_5class_ablation.yaml \
+#     --weights  <w1> <w2> <w3> \
+#     --labels   "5-class baseline" "4-class (no BPSK)" "5-class variant" \
+#     --save_dir experiments/comparison_full
+# =============================================================================
+
+experiment:
+  name: "5class_ablation_v1"          # <-- CHANGE THIS for each new variant
+  description: "5-class MCLDNN ablation variant — placeholder for future work"
+  track: "5class"
+  seed: 2016
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+training:
+  epochs: 10000
+  batch_size: 400
+  early_stopping_patience: 50
+  reduce_lr_patience: 5
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+
+output:
+  base_dir:        "experiments/5class_ablation_v1"       # <-- CHANGE THIS
+  checkpoint_path: "experiments/5class_ablation_v1/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_ablation_v1/logs"
+  figure_dir:      "experiments/5class_ablation_v1/figures"
+  result_dir:      "experiments/5class_ablation_v1/results"

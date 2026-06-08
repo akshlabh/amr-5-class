@@ -1,0 +1,46 @@
+# Dataset files (stored on Kaggle Datasets / Google Drive — NOT in Git)
+data/
+*.pkl
+
+# Trained weights and checkpoints (stored on GitHub Releases / Kaggle)
+experiments/
+*.h5
+*.weights.h5
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Virtual environments
+.env
+.venv
+venv/
+env/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Matplotlib / figure caches
+.matplotlib/
