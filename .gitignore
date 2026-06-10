@@ -3,7 +3,6 @@ data/
 *.pkl
 
 # Trained weights and checkpoints (stored on GitHub Releases / Kaggle)
-experiments/
 *.h5
 *.weights.h5
 
