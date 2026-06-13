@@ -336,21 +336,16 @@ def main():
     ]
 
     # ── Train ────────────────────────────────────────────────────────────────
-    # For the attention model the loss/metrics are keyed on the output name
-    # ('softmax').  Keras ignores attn_weights for loss since it has no entry.
-    if is_attention:
-        Y_train_fit = {'softmax': Y_train}
-        Y_val_fit   = {'softmax': Y_val}
-    else:
-        Y_train_fit = Y_train
-        Y_val_fit   = Y_val
-
+    # The attention training model has a SINGLE softmax output (just like the
+    # regular MCLDNN), so Y_train / Y_val / Y_test are passed directly.
+    # Attention weight extraction happens only in evaluate_attention.py via
+    # the separate build_mcldnn_attention_extractor() model.
     history = model.fit(
-        inp_train, Y_train_fit,
+        inp_train, Y_train,
         batch_size=batch_size,
         epochs=nb_epoch,
         verbose=2,
-        validation_data=(inp_val, Y_val_fit),
+        validation_data=(inp_val, Y_val),
         callbacks=callbacks,
         sample_weight=sample_weights
     )
@@ -358,9 +353,8 @@ def main():
     # ── Save training curves ──────────────────────────────────────────────────
     show_history(history, save_dir=log_dir)
 
-    # ── Evaluate on test set ──────────────────────────────────────────────────────────
-    Y_test_eval = {'softmax': Y_test} if is_attention else Y_test
-    score = model.evaluate(inp_test, Y_test_eval, verbose=1, batch_size=batch_size)
+    # ── Evaluate on test set ──────────────────────────────────────────────────
+    score = model.evaluate(inp_test, Y_test, verbose=1, batch_size=batch_size)
     print(f"\n[train] Test loss={score[0]:.4f}  Test accuracy={score[1]:.4f}")
 
     # ── Save test score ───────────────────────────────────────────────────────
@@ -376,9 +370,8 @@ def main():
     test_SNRs      = [lbl[x][1] for x in test_idx]
 
     # Overall confusion matrix
-    # Attention model returns [softmax, attn_weights] — take first output
-    _pred_all = model.predict(inp_test, batch_size=batch_size)
-    Y_hat_all = _pred_all[0] if is_attention else _pred_all
+    # Both training model variants return a plain ndarray (single output)
+    Y_hat_all = model.predict(inp_test, batch_size=batch_size)
     confnorm_all, _, _ = calculate_confusion_matrix(Y_test, Y_hat_all, mods)
     plot_confusion_matrix(
         confnorm_all, labels=mods,
@@ -399,8 +392,7 @@ def main():
         else:
             X_snr = inp_test[mask]
         Y_snr      = Y_test[mask]
-        _pred_snr  = model.predict(X_snr, batch_size=batch_size)
-        Y_hat_snr  = _pred_snr[0] if is_attention else _pred_snr
+        Y_hat_snr  = model.predict(X_snr, batch_size=batch_size)
         confnorm_i, cor, ncor = calculate_confusion_matrix(Y_snr, Y_hat_snr, mods)
         acc[snr]   = cor / (cor + ncor)
         snr_writer.writerow([snr, acc[snr]])

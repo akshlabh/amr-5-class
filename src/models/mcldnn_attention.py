@@ -15,10 +15,26 @@ Attention block (replaces both LSTM layers):
      Equivalent to the LSTM's final hidden-state summary, but differentiable
      and visualisable.
 
-Dual output: [softmax_logits, attn_weights]
-  attn_weights shape: (batch, num_heads, seq_len, seq_len) = (batch, 4, 124, 124)
-  This allows evaluate_attention.py to extract attention maps without
-  rebuilding the model.
+Two public functions
+---------------------
+build_mcldnn_attention(classes, dropout_rate)
+    Returns a SINGLE-output training model (softmax only).
+    Compiled with standard categorical_crossentropy + Adam.
+    Use this for model.fit() — no Y_dict needed, val_accuracy works out of
+    the box with Keras callbacks.
+
+build_mcldnn_attention_extractor(classes, dropout_rate, weights_path)
+    Builds the SAME computational graph and loads the trained weights, then
+    returns a DUAL-output model [softmax, attn_weights] for use in
+    evaluate_attention.py / predict() calls only.
+    NOT compiled — never call .fit() on this model.
+
+Why two models instead of one?
+    Keras 3 requires a loss entry for EVERY named model output.  If attn_weights
+    is an output during training, Keras demands loss={'softmax': ..., 'mha': ...}.
+    There is no clean way to specify "no loss" for a named output in dict-keyed
+    compile.  Building a single-output training model avoids this entirely while
+    keeping the extractor available for interpretability.
 
 Why self-attention here?
   The LSTM processes the 124-step sequence left-to-right with a fixed hidden
@@ -34,33 +50,28 @@ Constraints satisfied
   • keras.mixed_precision.set_global_policy('float32') called first in __main__
 """
 
-import os
 import keras
 from keras.models import Model
 from keras.layers import (
     Input, Dense, Conv1D, Conv2D,
     Dropout, Reshape, concatenate,
     MultiHeadAttention, LayerNormalization,
-    Softmax, Embedding, Lambda
+    Softmax, Embedding,
 )
 import keras.ops as ops
 
 
-def build_mcldnn_attention(classes: int = 5,
-                           dropout_rate: float = 0.5) -> Model:
+# ── Shared graph builder ───────────────────────────────────────────────────────
+def _build_graph(classes: int, dropout_rate: float):
     """
-    Build MCLDNN-Attention model.
-
-    Parameters
-    ----------
-    classes      : int   Number of output classes (default 5)
-    dropout_rate : float Dropout probability after each Dense fc layer
+    Build the full MCLDNN-Attention computational graph and return all
+    tensors needed to assemble either the training model or the extractor.
 
     Returns
     -------
-    keras.Model with:
-      inputs  : [input1 (2,128,1), input2 (128,1), input3 (128,1)]
-      outputs : [softmax_out (batch, classes), attn_weights (batch, 4, 124, 124)]
+    inputs       : list [input1, input2, input3]
+    softmax_out  : tensor  (batch, classes) — used as training model output
+    attn_weights : tensor  (batch, 4, 124, 124) — used by extractor only
     """
     dr = dropout_rate
 
@@ -113,14 +124,11 @@ def build_mcldnn_attention(classes: int = 5,
     # ── ATTENTION BLOCK — replaces both LSTM layers ────────────────────────────
 
     # Step A: Learnable positional encoding
-    # Create integer positions [0..123] and embed them into 100-dim space.
-    # Using a Lambda layer to generate the position indices on-the-fly so the
-    # graph is fully symbolic (no Python-side tensor dependency).
+    # Embed integer positions [0..123] into 100-dim space.
     pos_embedding = Embedding(input_dim=124, output_dim=100,
                               name='pos_embedding')
-    # Generate position indices: shape (1, 124), will broadcast over batch
     positions = ops.arange(0, 124, dtype='int32')        # (124,)
-    positions = ops.reshape(positions, (1, 124))          # (1, 124)
+    positions = ops.reshape(positions, (1, 124))          # (1, 124) → broadcasts
     pos_enc   = pos_embedding(positions)                  # (1, 124, 100)
     x = x + pos_enc                                       # (batch, 124, 100)
 
@@ -141,12 +149,9 @@ def build_mcldnn_attention(classes: int = 5,
     # → weighted sum → context vector (batch, 100)
     score  = Dense(1, name='temporal_score')(x)             # (batch, 124, 1)
     alpha  = Softmax(axis=1, name='temporal_alpha')(score)  # (batch, 124, 1)
-    # Weighted sum over time dimension: alpha * x summed over axis 1
-    # Use Dot on axes [1,1] to compute sum_t alpha_t * x_t
-    # alpha: (batch, 124, 1), x: (batch, 124, 100)
-    # Transpose alpha to (batch, 1, 124) then matmul with x (batch, 124, 100)
-    alpha_T = keras.ops.transpose(alpha, axes=(0, 2, 1))    # (batch, 1, 124)
-    context = keras.ops.matmul(alpha_T, x)                  # (batch, 1, 100)
+    # Transpose alpha: (batch, 1, 124), matmul with x: (batch, 124, 100)
+    alpha_T = ops.transpose(alpha, axes=(0, 2, 1))          # (batch, 1, 124)
+    context = ops.matmul(alpha_T, x)                        # (batch, 1, 100)
     context = Reshape((100,), name='context')(context)      # (batch, 100)
 
     # ── Dense classifier head — identical to mcldnn.py ─────────────────────────
@@ -158,49 +163,114 @@ def build_mcldnn_attention(classes: int = 5,
     out = Dropout(dr, name='drop2')(out)
     softmax_out = Dense(classes, activation='softmax', name='softmax')(out)
 
-    # ── Build dual-output model ────────────────────────────────────────────────
-    model = Model(
-        inputs=[input1, input2, input3],
-        outputs=[softmax_out, attn_weights],
-        name='MCLDNN_Attention'
-    )
+    return [input1, input2, input3], softmax_out, attn_weights
 
-    # ── Compile ────────────────────────────────────────────────────────────────
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+
+def build_mcldnn_attention(classes: int = 5,
+                           dropout_rate: float = 0.5) -> Model:
+    """
+    Build and compile the MCLDNN-Attention TRAINING model.
+
+    Single output: softmax classification (batch, classes).
+    Compiled with standard categorical_crossentropy + Adam, so Keras
+    callbacks (val_accuracy, ModelCheckpoint, ReduceLROnPlateau) all work
+    without any special Y_dict — just pass Y_train directly to model.fit().
+
+    Parameters
+    ----------
+    classes      : int   Number of output classes (default 5)
+    dropout_rate : float Dropout probability after each Dense fc layer
+
+    Returns
+    -------
+    keras.Model  single-output training model
+    """
+    inputs, softmax_out, _ = _build_graph(classes, dropout_rate)
+
+    model = Model(inputs=inputs, outputs=softmax_out, name='MCLDNN_Attention')
+
     model.compile(
-        loss={'softmax': 'categorical_crossentropy'},
-        metrics={'softmax': ['accuracy']},
+        loss='categorical_crossentropy',
+        metrics=['accuracy'],
         optimizer=keras.optimizers.Adam(learning_rate=1e-3, clipnorm=1.0)
     )
-
     return model
 
 
-# ── Standalone test ────────────────────────────────────────────────────────────
+def build_mcldnn_attention_extractor(classes: int = 5,
+                                     dropout_rate: float = 0.5,
+                                     weights_path: str = None) -> Model:
+    """
+    Build the MCLDNN-Attention EXTRACTOR model for interpretability.
+
+    Dual output: [softmax (batch, classes), attn_weights (batch, 4, 124, 124)]
+    Loads weights from a checkpoint trained by build_mcldnn_attention() —
+    the graph is identical, so weight loading works layer-by-layer by name.
+
+    NOT compiled.  Use only for model.predict() calls in evaluate_attention.py.
+
+    Parameters
+    ----------
+    classes      : int   Number of output classes (default 5)
+    dropout_rate : float Must match the value used during training
+    weights_path : str or None  Path to .weights.h5 checkpoint; None = random
+
+    Returns
+    -------
+    keras.Model  dual-output extractor model
+    """
+    import os
+    inputs, softmax_out, attn_weights = _build_graph(classes, dropout_rate)
+
+    extractor = Model(inputs=inputs,
+                      outputs=[softmax_out, attn_weights],
+                      name='MCLDNN_Attention_Extractor')
+
+    if weights_path is not None:
+        if not os.path.exists(weights_path):
+            raise FileNotFoundError(
+                f"Weights not found: {weights_path}\n"
+                "Train the model first with build_mcldnn_attention()."
+            )
+        extractor.load_weights(weights_path)
+        print(f"[extractor] Loaded weights from {weights_path}")
+
+    return extractor
+
+
+# ── Standalone test ─────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    import keras
     keras.mixed_precision.set_global_policy('float32')
 
-    print("=== MCLDNN-Attention (5-class) ===")
+    print("=== MCLDNN-Attention training model (5-class) ===")
     model = build_mcldnn_attention(classes=5)
     model.summary()
 
-    total_params = sum(
-        w.numpy().size for w in model.trainable_weights
-    ) if hasattr(model.trainable_weights[0], 'numpy') else model.count_params()
     print(f"\nTotal trainable parameters: {model.count_params():,}")
     assert model.count_params() < 300_000, (
         f"Model has {model.count_params():,} params — exceeds 300,000 limit!"
     )
     print("Param count check PASSED (<300,000)")
 
-    # Verify output shapes with dummy batch
+    # Verify output shapes
     import numpy as np
     dummy1 = np.zeros((4, 2, 128, 1), dtype='float32')
     dummy2 = np.zeros((4, 128, 1),    dtype='float32')
     dummy3 = np.zeros((4, 128, 1),    dtype='float32')
-    out_softmax, out_attn = model.predict([dummy1, dummy2, dummy3], verbose=0)
-    print(f"softmax output shape : {out_softmax.shape}   (expect (4, 5))")
-    print(f"attn_weights shape   : {out_attn.shape}      (expect (4, 4, 124, 124))")
-    assert out_softmax.shape == (4, 5),       f"Wrong softmax shape: {out_softmax.shape}"
-    assert out_attn.shape    == (4, 4, 124, 124), f"Wrong attn shape: {out_attn.shape}"
-    print("Shape checks PASSED")
+
+    # Training model: single output
+    out_softmax = model.predict([dummy1, dummy2, dummy3], verbose=0)
+    print(f"Training model output shape: {out_softmax.shape}  (expect (4, 5))")
+    assert out_softmax.shape == (4, 5), f"Wrong shape: {out_softmax.shape}"
+
+    # Extractor model: dual output
+    print("\n=== MCLDNN-Attention extractor (dual output) ===")
+    extractor = build_mcldnn_attention_extractor(classes=5)
+    out_soft2, out_attn = extractor.predict([dummy1, dummy2, dummy3], verbose=0)
+    print(f"Extractor softmax shape    : {out_soft2.shape}  (expect (4, 5))")
+    print(f"Extractor attn_weights shape: {out_attn.shape}  (expect (4, 4, 124, 124))")
+    assert out_soft2.shape == (4, 5)
+    assert out_attn.shape  == (4, 4, 124, 124), f"Wrong attn shape: {out_attn.shape}"
+    print("All shape checks PASSED")

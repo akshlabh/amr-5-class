@@ -46,7 +46,8 @@ from src.utils.seed import set_all_seeds
 set_all_seeds(2016)
 
 from src.dataset                  import load_data, FIVE_CLASS
-from src.models.mcldnn_attention  import build_mcldnn_attention
+from src.models.mcldnn_attention  import (build_mcldnn_attention,
+                                          build_mcldnn_attention_extractor)
 from src.models.mcldnn            import MCLDNN
 from src.utils.mltools            import calculate_confusion_matrix
 from src.utils.attention_analysis import (
@@ -113,7 +114,7 @@ def main():
     print(f"[eval_attention] Test set: {X_test.shape[0]} samples, "
           f"SNR range: {snrs[0]}..{snrs[-1]} dB")
 
-    # ── Build and load attention model ────────────────────────────────────────
+    # ── Build and load attention model (single-output for accuracy eval) ──────────
     print("\n[eval_attention] Building attention model ...")
     attn_model = build_mcldnn_attention(classes=n_classes)
     if not os.path.exists(args.attn_weights):
@@ -123,6 +124,13 @@ def main():
     else:
         attn_model.load_weights(args.attn_weights)
         print(f"[eval_attention] Loaded attention weights: {args.attn_weights}")
+
+    # Build extractor model (dual-output) for attention weight extraction
+    print("[eval_attention] Building attention extractor model ...")
+    extractor = build_mcldnn_attention_extractor(
+        classes=n_classes,
+        weights_path=args.attn_weights if os.path.exists(args.attn_weights) else None
+    )
 
     # ── Build and load baseline model ─────────────────────────────────────────
     print("\n[eval_attention] Building baseline MCLDNN ...")
@@ -149,9 +157,9 @@ def main():
         X_snr  = [b[mask] for b in inp_test]
         Y_snr  = Y_test[mask]
 
-        # Attention model: first output is softmax, second is attn_weights
-        pred_attn_prob, _ = attn_model.predict(X_snr, verbose=0,
-                                               batch_size=BATCH_SIZE)
+        # Attention model: single output → plain ndarray
+        pred_attn_prob = attn_model.predict(X_snr, verbose=0,
+                                            batch_size=BATCH_SIZE)
         _, cor_a, ncor_a = calculate_confusion_matrix(Y_snr, pred_attn_prob, mods)
         acc_attn = cor_a / (cor_a + ncor_a)
 
@@ -176,11 +184,12 @@ def main():
         writer.writerows(rows)
     print(f"\n[eval_attention] Saved comparison CSV: {comp_path}")
 
-    # ── Extract attention weights per SNR ─────────────────────────────────────
+    # ── Extract attention weights per SNR (using extractor model) ─────────────────
     print("\n[eval_attention] Extracting attention weights per SNR ...")
-    Y_pred_all, _ = attn_model.predict(inp_test, batch_size=BATCH_SIZE, verbose=0)
-    Y_pred_cls = np.argmax(Y_pred_all, axis=1)
-    correct_mask = (Y_pred_cls == Y_true)
+    # Use single-output model for correct/incorrect classification
+    Y_pred_all    = attn_model.predict(inp_test, batch_size=BATCH_SIZE, verbose=0)
+    Y_pred_cls    = np.argmax(Y_pred_all, axis=1)
+    correct_mask  = (Y_pred_cls == Y_true)
 
     attn_par_per_snr = {}
     for snr in SELECTED_SNRS:
@@ -194,7 +203,8 @@ def main():
         chosen = mask[:N_ATTN] if len(mask) >= N_ATTN else mask
         X_chosen = [b[chosen] for b in inp_test]
 
-        attn_w = extract_attention_weights(attn_model, X_chosen,
+        # Use the extractor model (dual-output) to get attn_weights
+        attn_w = extract_attention_weights(extractor, X_chosen,
                                            n_samples=len(chosen))
         # attn_w: (N, 4, 124, 124)
 
