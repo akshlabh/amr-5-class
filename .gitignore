@@ -5,6 +5,7 @@ data/
 # Trained weights and checkpoints (stored on GitHub Releases / Kaggle)
 *.h5
 *.weights.h5
+!experiments/**/checkpoints/*.weights.h5
 
 # Python cache
 __pycache__/
