@@ -1,0 +1,53 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN-Attention (LSTM replaced with self-attention)
+# =============================================================================
+# Classes   : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Dataset   : RML2016.10a (filtered to 5 classes, SNR -6 to +6 dB only)
+# Model     : mcldnn_attention — same conv block as MCLDNN, LSTM replaced
+#             by multi-head self-attention + learned temporal pooling
+# Purpose   : Evaluate whether self-attention outperforms LSTM in the
+#             medium-SNR regime where temporal patterns matter most.
+# Professor : Train/val/test splits are globally shuffled before splitting
+#             (not per-SNR-class block) as required.
+# =============================================================================
+
+experiment:
+  name: "5class_attention"
+  description: "MCLDNN with self-attention (no LSTM) on 5 PSK/QAM classes, SNR -6 to +6 dB"
+  track: "attention"
+  seed: 2016
+  model: "mcldnn_attention"
+
+dataset:
+  # On Kaggle: set this to your Kaggle dataset input path, e.g.:
+  #   /kaggle/input/rml2016-5class/RML2016.10a_5class.pkl
+  # Locally: set to your absolute path
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+# SNR filtering: only train/evaluate on -6 dB to +6 dB
+# This is the medium-SNR regime where attention is most informative
+snr_range: [-6, 6]
+
+# Global shuffle split required by professor
+shuffle_split: true
+
+training:
+  epochs: 10000
+  batch_size: 400
+  early_stopping_patience: 100
+  reduce_lr_patience: 15
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+
+output:
+  base_dir:        "experiments/5class_attention"
+  checkpoint_path: "experiments/5class_attention/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_attention/logs"
+  figure_dir:      "experiments/5class_attention/figures"
+  result_dir:      "experiments/5class_attention/results"

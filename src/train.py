@@ -117,7 +117,16 @@ def main():
     n_classes        = len(selected_classes)
 
     # Optional fixed-split file (decouples seed from test-set definition)
-    split_file = cfg.get('split_file', None)
+    split_file    = cfg.get('split_file', None)
+
+    # SNR filtering + global shuffle split (attention experiment)
+    snr_range     = cfg.get('snr_range', None)
+    if snr_range is not None:
+        snr_range = tuple(snr_range)   # YAML loads lists; convert to tuple
+    shuffle_split = cfg.get('shuffle_split', False)
+
+    # Model type selection
+    model_type    = cfg['experiment'].get('model', 'mcldnn')
 
     # ── Create output directories ─────────────────────────────────────────────
     for d in [os.path.dirname(ckpt_path), log_dir, fig_dir, res_dir]:
@@ -125,11 +134,14 @@ def main():
 
     print(f"\n{'='*60}")
     print(f"  Experiment : {exp_name}")
+    print(f"  Model      : {model_type}")
     print(f"  Branch     : {branch}")
     print(f"  Dropout    : {dropout_rate}")
     print(f"  L2 Dense   : {l2_dense}   L2 LSTM : {l2_lstm}")
     print(f"  SNR Weighted: {snr_weighted}")
     print(f"  Initial LR : {initial_lr}")
+    print(f"  SNR Range  : {snr_range}")
+    print(f"  Shuffle Split: {shuffle_split}")
     if transfer_from:
         print(f"  Transfer   : {transfer_from}")
     print(f"  Classes    : {selected_classes}")
@@ -143,7 +155,10 @@ def main():
     (X_val,   Y_val),   \
     (X_test,  Y_test),  \
     (train_idx, val_idx, test_idx) = load_data(
-        data_path, selected_classes, seed, split_file=split_file)
+        data_path, selected_classes, seed,
+        split_file=split_file,
+        snr_range=snr_range,
+        shuffle_split=shuffle_split)
 
     # ── Prepare inputs (branch-aware) ─────────────────────────────────────────
     def prepare_inputs(X):
@@ -189,10 +204,17 @@ def main():
     else:
         print(f"[train] Input shapes ({branch}): {inp_train.shape}")
 
-    # ── Build model ───────────────────────────────────────────────────────────
+    # ── Build model ────────────────────────────────────────────────────────────
     resume_weights = args.resume
+    is_attention   = (model_type == 'mcldnn_attention')
 
-    if branch == 'full':
+    if is_attention:
+        from src.models.mcldnn_attention import build_mcldnn_attention
+        model = build_mcldnn_attention(classes=n_classes,
+                                       dropout_rate=dropout_rate)
+        if resume_weights:
+            model.load_weights(resume_weights)
+    elif branch == 'full':
         from src.models.mcldnn import MCLDNN
         model = MCLDNN(weights=resume_weights, classes=n_classes,
                        dropout_rate=dropout_rate, l2_dense=l2_dense,
@@ -250,11 +272,14 @@ def main():
                   f"{n_skip} skipped (output layer).")
             del src
 
-    model.compile(
-        loss='categorical_crossentropy',
-        optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),
-        metrics=['accuracy']
-    )
+    # Attention model is already compiled inside build_mcldnn_attention().
+    # For MCLDNN/ablation, compile with standard single-output settings.
+    if not is_attention:
+        model.compile(
+            loss='categorical_crossentropy',
+            optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),
+            metrics=['accuracy']
+        )
 
     # ── SNR-weighted sample weighting ─────────────────────────────────────────
     # Root-cause fix for 4-class training instability:
@@ -310,13 +335,22 @@ def main():
         ),
     ]
 
-    # ── Train ─────────────────────────────────────────────────────────────────
+    # ── Train ────────────────────────────────────────────────────────────────
+    # For the attention model the loss/metrics are keyed on the output name
+    # ('softmax').  Keras ignores attn_weights for loss since it has no entry.
+    if is_attention:
+        Y_train_fit = {'softmax': Y_train}
+        Y_val_fit   = {'softmax': Y_val}
+    else:
+        Y_train_fit = Y_train
+        Y_val_fit   = Y_val
+
     history = model.fit(
-        inp_train, Y_train,
+        inp_train, Y_train_fit,
         batch_size=batch_size,
         epochs=nb_epoch,
         verbose=2,
-        validation_data=(inp_val, Y_val),
+        validation_data=(inp_val, Y_val_fit),
         callbacks=callbacks,
         sample_weight=sample_weights
     )
@@ -324,8 +358,9 @@ def main():
     # ── Save training curves ──────────────────────────────────────────────────
     show_history(history, save_dir=log_dir)
 
-    # ── Evaluate on test set ──────────────────────────────────────────────────
-    score = model.evaluate(inp_test, Y_test, verbose=1, batch_size=batch_size)
+    # ── Evaluate on test set ──────────────────────────────────────────────────────────
+    Y_test_eval = {'softmax': Y_test} if is_attention else Y_test
+    score = model.evaluate(inp_test, Y_test_eval, verbose=1, batch_size=batch_size)
     print(f"\n[train] Test loss={score[0]:.4f}  Test accuracy={score[1]:.4f}")
 
     # ── Save test score ───────────────────────────────────────────────────────
@@ -341,7 +376,9 @@ def main():
     test_SNRs      = [lbl[x][1] for x in test_idx]
 
     # Overall confusion matrix
-    Y_hat_all = model.predict(inp_test, batch_size=batch_size)
+    # Attention model returns [softmax, attn_weights] — take first output
+    _pred_all = model.predict(inp_test, batch_size=batch_size)
+    Y_hat_all = _pred_all[0] if is_attention else _pred_all
     confnorm_all, _, _ = calculate_confusion_matrix(Y_test, Y_hat_all, mods)
     plot_confusion_matrix(
         confnorm_all, labels=mods,
@@ -356,13 +393,14 @@ def main():
 
     for i, snr in enumerate(snrs):
         mask  = np.array(test_SNRs) == snr
-        # inp_test is a list of arrays for 'full', a plain array for single-branch
-        if branch == 'full':
+        # inp_test is a list of arrays for 'full'/'attention', array for single-branch
+        if branch == 'full' or is_attention:
             X_snr = [br[mask] for br in inp_test]
         else:
             X_snr = inp_test[mask]
         Y_snr      = Y_test[mask]
-        Y_hat_snr  = model.predict(X_snr, batch_size=batch_size)
+        _pred_snr  = model.predict(X_snr, batch_size=batch_size)
+        Y_hat_snr  = _pred_snr[0] if is_attention else _pred_snr
         confnorm_i, cor, ncor = calculate_confusion_matrix(Y_snr, Y_hat_snr, mods)
         acc[snr]   = cor / (cor + ncor)
         snr_writer.writerow([snr, acc[snr]])
