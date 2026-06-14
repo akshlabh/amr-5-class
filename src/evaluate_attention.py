@@ -105,7 +105,7 @@ def main():
         selected_classes=CLASSES,
         seed=2016,
         snr_range=SNR_RANGE,
-        shuffle_split=True
+        shuffle_split=False
     )
     n_classes = len(mods)
     test_SNRs = np.array([lbl[i][1] for i in test_idx])

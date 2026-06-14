@@ -35,8 +35,8 @@ snr_range:
   - -6
   - 6
 
-# Global shuffle split required by professor — must match attention config
-shuffle_split: true
+# Global shuffle split disabled for fair comparison curve evaluation
+shuffle_split: false
 
 training:
   epochs: 10000
