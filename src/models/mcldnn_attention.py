@@ -59,6 +59,24 @@ from keras.layers import (
     Softmax, Embedding,
 )
 import keras.ops as ops
+import numpy as np
+
+
+def _sinusoidal_encoding(seq_len: int, d_model: int) -> np.ndarray:
+    """Fixed sinusoidal positional encoding (Vaswani et al. 2017).
+
+    Returns array of shape (1, seq_len, d_model).  Does NOT require
+    any gradient updates — position information is mathematically
+    correct from epoch 0, unlike a learned Embedding which needs
+    thousands of samples to converge to meaningful position vectors.
+    """
+    pos = np.arange(seq_len)[:, None]               # (seq_len, 1)
+    i   = np.arange(d_model)[None, :]               # (1, d_model)
+    angle = pos / np.power(10000, (2 * (i // 2)) / d_model)
+    # Even indices: sin, odd indices: cos
+    angle[:, 0::2] = np.sin(angle[:, 0::2])
+    angle[:, 1::2] = np.cos(angle[:, 1::2])
+    return angle[None, :, :].astype(np.float32)     # (1, seq_len, d_model)
 
 
 # ── Shared graph builder ───────────────────────────────────────────────────────
@@ -123,14 +141,21 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
 
     # ── ATTENTION BLOCK — replaces both LSTM layers ────────────────────────────
 
-    # Step A: Learnable positional encoding
-    # Embed integer positions [0..123] into 100-dim space.
-    pos_embedding = Embedding(input_dim=124, output_dim=100,
-                              name='pos_embedding')
-    positions = ops.arange(0, 124, dtype='int32')        # (124,)
-    positions = ops.reshape(positions, (1, 124))          # (1, 124) → broadcasts
-    pos_enc   = pos_embedding(positions)                  # (1, 124, 100)
-    x = x + pos_enc                                       # (batch, 124, 100)
+    # Step A: Fixed sinusoidal positional encoding (Vaswani et al. 2017)
+    # WHY sinusoidal instead of learned Embedding:
+    #   - Learned embeddings need many training samples to converge.
+    #     On our 21k restricted dataset they remain nearly random,
+    #     providing no useful position signal and harming attention focus.
+    #   - Sinusoidal encoding is mathematically correct from epoch 0:
+    #     PE(pos, 2i)   = sin(pos / 10000^(2i/d))
+    #     PE(pos, 2i+1) = cos(pos / 10000^(2i/d))
+    #     The model can immediately learn dot-product attention based on
+    #     relative position differences without any extra gradient steps.
+    pe = ops.convert_to_tensor(
+        _sinusoidal_encoding(seq_len=124, d_model=100),
+        dtype='float32'
+    )                                                # (1, 124, 100)
+    x = x + pe                                      # (batch, 124, 100)
 
     # Step B: Multi-head self-attention (4 heads, key_dim=25 → d_model=100)
     # dropout=attn_dropout zeros random attention weights during training,
@@ -146,20 +171,30 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     # attn_weights shape: (batch, 4, 124, 124)
 
     # Step C: Residual connection + Layer Normalisation + post-attention dropout
-    # Post-attention dropout (Transformer-style) further regularises the
-    # attended representation before it feeds into temporal pooling.
     x = LayerNormalization(name='attn_norm')(attn_out + x)  # (batch, 124, 100)
     x = Dropout(attn_dropout, name='attn_drop')(x)           # (batch, 124, 100)
 
-    # Step D: Learned temporal pooling (replaces LSTM's final hidden state)
-    # Dense(1) over each time step → scalar score → Softmax across time
-    # → weighted sum → context vector (batch, 100)
-    score  = Dense(1, name='temporal_score')(x)             # (batch, 124, 1)
-    alpha  = Softmax(axis=1, name='temporal_alpha')(score)  # (batch, 124, 1)
-    # Transpose alpha: (batch, 1, 124), matmul with x: (batch, 124, 100)
-    alpha_T = ops.transpose(alpha, axes=(0, 2, 1))          # (batch, 1, 124)
-    context = ops.matmul(alpha_T, x)                        # (batch, 1, 100)
-    context = Reshape((100,), name='context')(context)      # (batch, 100)
+    # Step D: Learned temperature temporal pooling
+    # WHY learned temperature:
+    #   At low SNR  → network learns τ large  → softmax spreads → global average
+    #               (safe: noise averages out across all 124 steps)
+    #   At high SNR → network learns τ small  → softmax sharpens → selective focus
+    #               (useful: model attends to specific symbol boundaries/transitions)
+    # This is a single scalar parameter (no extra capacity, < 1 extra parameter).
+    # It lets attention behave as LSTM-style averaging at low SNR while
+    # recovering sharp selective attention at high SNR.
+    score = Dense(1, name='temporal_score')(x)              # (batch, 124, 1)
+    # log_tau initialised to 0 → tau=1 at start (neutral).  Trained end-to-end.
+    log_tau = keras.Variable(
+        initializer=keras.initializers.Zeros(), shape=(), dtype='float32',
+        trainable=True, name='log_tau'
+    )
+    tau      = ops.exp(log_tau)                             # always positive
+    score_t  = score / (tau + 1e-6)                        # temperature scaling
+    alpha    = Softmax(axis=1, name='temporal_alpha')(score_t)  # (batch, 124, 1)
+    alpha_T  = ops.transpose(alpha, axes=(0, 2, 1))         # (batch, 1, 124)
+    context  = ops.matmul(alpha_T, x)                       # (batch, 1, 100)
+    context  = Reshape((100,), name='context')(context)     # (batch, 100)
 
     # ── Dense classifier head ────────────────────────────────────────────────────
     # L2 increased from 1e-3 → 3e-3 to add stronger weight-decay pressure on
