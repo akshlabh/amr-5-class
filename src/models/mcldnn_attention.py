@@ -62,7 +62,7 @@ import keras.ops as ops
 
 
 # ── Shared graph builder ───────────────────────────────────────────────────────
-def _build_graph(classes: int, dropout_rate: float):
+def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     """
     Build the full MCLDNN-Attention computational graph and return all
     tensors needed to assemble either the training model or the extractor.
@@ -133,7 +133,11 @@ def _build_graph(classes: int, dropout_rate: float):
     x = x + pos_enc                                       # (batch, 124, 100)
 
     # Step B: Multi-head self-attention (4 heads, key_dim=25 → d_model=100)
-    mha = MultiHeadAttention(num_heads=4, key_dim=25, name='mha')
+    # dropout=attn_dropout zeros random attention weights during training,
+    # preventing the heads from memorising exact (query, key) pairings in
+    # the small 21k-sample restricted training set.
+    mha = MultiHeadAttention(num_heads=4, key_dim=25, dropout=attn_dropout,
+                             name='mha')
     attn_out, attn_weights = mha(
         query=x, value=x, key=x,
         return_attention_scores=True
@@ -141,8 +145,11 @@ def _build_graph(classes: int, dropout_rate: float):
     # attn_out shape    : (batch, 124, 100)
     # attn_weights shape: (batch, 4, 124, 124)
 
-    # Step C: Residual connection + Layer Normalisation
+    # Step C: Residual connection + Layer Normalisation + post-attention dropout
+    # Post-attention dropout (Transformer-style) further regularises the
+    # attended representation before it feeds into temporal pooling.
     x = LayerNormalization(name='attn_norm')(attn_out + x)  # (batch, 124, 100)
+    x = Dropout(attn_dropout, name='attn_drop')(x)           # (batch, 124, 100)
 
     # Step D: Learned temporal pooling (replaces LSTM's final hidden state)
     # Dense(1) over each time step → scalar score → Softmax across time
@@ -154,12 +161,16 @@ def _build_graph(classes: int, dropout_rate: float):
     context = ops.matmul(alpha_T, x)                        # (batch, 1, 100)
     context = Reshape((100,), name='context')(context)      # (batch, 100)
 
-    # ── Dense classifier head — identical to mcldnn.py ─────────────────────────
+    # ── Dense classifier head ────────────────────────────────────────────────────
+    # L2 increased from 1e-3 → 3e-3 to add stronger weight-decay pressure on
+    # the fully-connected layers.  With only 21k training samples the model
+    # can easily memorise IQ sequences via large fc weights; stronger L2
+    # keeps them small and forces generalisation.
     out = Dense(128, activation='selu', name='fc1',
-                kernel_regularizer=keras.regularizers.L2(1e-3))(context)
+                kernel_regularizer=keras.regularizers.L2(3e-3))(context)
     out = Dropout(dr, name='drop1')(out)
     out = Dense(128, activation='selu', name='fc2',
-                kernel_regularizer=keras.regularizers.L2(1e-3))(out)
+                kernel_regularizer=keras.regularizers.L2(3e-3))(out)
     out = Dropout(dr, name='drop2')(out)
     softmax_out = Dense(classes, activation='softmax', name='softmax')(out)
 

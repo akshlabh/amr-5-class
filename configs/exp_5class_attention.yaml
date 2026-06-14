@@ -9,11 +9,18 @@
 #             medium-SNR regime where temporal patterns matter most.
 # Professor : Train/val/test splits are globally shuffled before splitting
 #             (not per-SNR-class block) as required.
+#
+# v2 regularisation fixes (overfitting: train 99% / val 62% / best epoch 12)
+#   - dropout_rate 0.5 → 0.6  (Dense layers)
+#   - attention dropout 0.1 added to MHA layer (built into model)
+#   - post-attention dropout 0.1 added after LayerNorm (built into model)
+#   - Dense L2 1e-3 → 3e-3 (built into model)
+#   - early_stopping_patience 100 → 50 (best epoch was 12; no need for 163 dead epochs)
 # =============================================================================
 
 experiment:
   name: "5class_attention"
-  description: "MCLDNN with self-attention (no LSTM) on 5 PSK/QAM classes, SNR -6 to +6 dB"
+  description: "MCLDNN with self-attention (no LSTM) on 5 PSK/QAM classes, SNR -6 to +6 dB — v2 regularised"
   track: "attention"
   seed: 2016
   model: "mcldnn_attention"
@@ -40,8 +47,9 @@ shuffle_split: true
 training:
   epochs: 10000
   batch_size: 400
-  early_stopping_patience: 100
-  reduce_lr_patience: 15
+  dropout_rate: 0.6           # increased from 0.5 — stronger regularisation on Dense layers
+  early_stopping_patience: 50 # reduced from 100 — best epoch was 12, no need for 163 dead epochs
+  reduce_lr_patience: 10      # reduced from 15 — faster LR decay
   reduce_lr_factor: 0.5
   min_lr: 1.0e-7
 
