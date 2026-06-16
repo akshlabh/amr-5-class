@@ -47,6 +47,9 @@ shuffle_split: false
 training:
   epochs: 10000
   batch_size: 400
+  class_weights:
+    "QAM16": 2.0
+    "QAM64": 2.0
   dropout_rate: 0.6           # increased from 0.5 — stronger regularisation on Dense layers
   early_stopping_patience: 50 # reduced from 100 — best epoch was 12, no need for 163 dead epochs
   reduce_lr_patience: 10      # reduced from 15 — faster LR decay
