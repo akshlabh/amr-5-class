@@ -212,7 +212,8 @@ def main():
     if is_attention:
         from src.models.mcldnn_attention import build_mcldnn_attention
         model = build_mcldnn_attention(classes=n_classes,
-                                       dropout_rate=dropout_rate)
+                                       dropout_rate=dropout_rate,
+                                       learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
     elif branch == 'full':

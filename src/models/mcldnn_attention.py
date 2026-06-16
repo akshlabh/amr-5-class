@@ -212,7 +212,8 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def build_mcldnn_attention(classes: int = 5,
-                           dropout_rate: float = 0.6) -> Model:
+                           dropout_rate: float = 0.6,
+                           learning_rate: float = 1e-3) -> Model:
     """
     Build and compile the MCLDNN-Attention TRAINING model.
 
@@ -235,9 +236,9 @@ def build_mcldnn_attention(classes: int = 5,
     model = Model(inputs=inputs, outputs=softmax_out, name='MCLDNN_Attention')
 
     model.compile(
-        loss='categorical_crossentropy',
+        loss=keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
         metrics=['accuracy'],
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3, clipnorm=1.0)
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0)
     )
     return model
 
