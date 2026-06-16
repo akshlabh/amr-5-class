@@ -147,43 +147,43 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
 
     # ── ATTENTION BLOCK — replaces both LSTM layers ────────────────────────────
 
-    # Step A: project to d_model=200
-    x = Dense(200, name='input_proj',
+    # Step A: project to d_model=128
+    x = Dense(128, name='input_proj',
               kernel_regularizer=keras.regularizers.L2(1e-4))(x)
 
-    # Positional encoding — update d_model=200
+    # Positional encoding — update d_model=128
     pe = ops.convert_to_tensor(
-        _sinusoidal_encoding(seq_len=124, d_model=200),
+        _sinusoidal_encoding(seq_len=124, d_model=128),
         dtype='float32'
-    )                                               # (1, 124, 200)
-    x = x + pe                                      # (batch, 124, 200)
+    )                                               # (1, 124, 128)
+    x = x + pe                                      # (batch, 124, 128)
 
     # Step B: Multi-head self-attention (8 heads)
-    mha = MultiHeadAttention(num_heads=8, key_dim=25, dropout=attn_dropout,
+    mha = MultiHeadAttention(num_heads=8, key_dim=16, dropout=attn_dropout,
                              name='mha')
     attn_out, attn_weights = mha(
         query=x, value=x, key=x,
         return_attention_scores=True
     )
-    # attn_out shape    : (batch, 124, 200)
+    # attn_out shape    : (batch, 124, 128)
     # attn_weights shape: (batch, 8, 124, 124)
 
     # Step C: Residual connection + Layer Normalisation + post-attention dropout
-    x = LayerNormalization(name='attn_norm')(attn_out + x)  # (batch, 124, 200)
-    x = Dropout(attn_dropout, name='attn_drop')(x)           # (batch, 124, 200)
+    x = LayerNormalization(name='attn_norm')(attn_out + x)  # (batch, 124, 128)
+    x = Dropout(attn_dropout, name='attn_drop')(x)           # (batch, 124, 128)
 
-    # Step D: FFN (Transformer-style point-wise) projects to 200
+    # Step D: FFN (Transformer-style point-wise) projects to 128
     ffn = Dense(256, activation='relu', name='ffn1',
                 kernel_regularizer=keras.regularizers.L2(1e-4))(x)
     ffn = Dropout(attn_dropout, name='ffn_drop')(ffn)
-    ffn = Dense(200, name='ffn2',
+    ffn = Dense(128, name='ffn2',
                 kernel_regularizer=keras.regularizers.L2(1e-4))(ffn)
-    x = LayerNormalization(name='ffn_norm')(ffn + x)   # (batch, 124, 200)
+    x = LayerNormalization(name='ffn_norm')(ffn + x)   # (batch, 124, 128)
 
     # Stats pooling
-    x_mean = ops.mean(x, axis=1)                        # (batch, 200)
-    x_max  = ops.max(x, axis=1)                         # (batch, 200)
-    context = x_mean + x_max                            # (batch, 200)
+    x_mean = ops.mean(x, axis=1)                        # (batch, 128)
+    x_max  = ops.max(x, axis=1)                         # (batch, 128)
+    context = x_mean + x_max                            # (batch, 128)
 
     # ── Dense classifier head ────────────────────────────────────────────────────
     # L2 increased from 1e-3 → 3e-3 to add stronger weight-decay pressure on
