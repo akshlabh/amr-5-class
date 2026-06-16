@@ -89,7 +89,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     -------
     inputs       : list [input1, input2, input3]
     softmax_out  : tensor  (batch, classes) — used as training model output
-    attn_weights : tensor  (batch, 4, 124, 124) — used by extractor only
+    attn_weights : tensor  (batch, 8, 124, 124) — used by extractor only
     """
     dr = dropout_rate
 
@@ -147,51 +147,43 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
 
     # ── ATTENTION BLOCK — replaces both LSTM layers ────────────────────────────
 
-    # Step A: Fixed sinusoidal positional encoding (Vaswani et al. 2017)
-    # WHY sinusoidal instead of learned Embedding:
-    #   - Learned embeddings need many training samples to converge.
-    #     On our 21k restricted dataset they remain nearly random,
-    #     providing no useful position signal and harming attention focus.
-    #   - Sinusoidal encoding is mathematically correct from epoch 0:
-    #     PE(pos, 2i)   = sin(pos / 10000^(2i/d))
-    #     PE(pos, 2i+1) = cos(pos / 10000^(2i/d))
-    #     The model can immediately learn dot-product attention based on
-    #     relative position differences without any extra gradient steps.
-    pe = ops.convert_to_tensor(
-        _sinusoidal_encoding(seq_len=124, d_model=100),
-        dtype='float32'
-    )                                                # (1, 124, 100)
-    x = x + pe                                      # (batch, 124, 100)
+    # Step A: project to d_model=200
+    x = Dense(200, name='input_proj',
+              kernel_regularizer=keras.regularizers.L2(1e-4))(x)
 
-    # Step B: Multi-head self-attention (4 heads, key_dim=25 → d_model=100)
-    # dropout=attn_dropout zeros random attention weights during training,
-    # preventing the heads from memorising exact (query, key) pairings in
-    # the small 21k-sample restricted training set.
-    mha = MultiHeadAttention(num_heads=4, key_dim=25, dropout=attn_dropout,
+    # Positional encoding — update d_model=200
+    pe = ops.convert_to_tensor(
+        _sinusoidal_encoding(seq_len=124, d_model=200),
+        dtype='float32'
+    )                                               # (1, 124, 200)
+    x = x + pe                                      # (batch, 124, 200)
+
+    # Step B: Multi-head self-attention (8 heads)
+    mha = MultiHeadAttention(num_heads=8, key_dim=25, dropout=attn_dropout,
                              name='mha')
     attn_out, attn_weights = mha(
         query=x, value=x, key=x,
         return_attention_scores=True
     )
-    # attn_out shape    : (batch, 124, 100)
-    # attn_weights shape: (batch, 4, 124, 124)
+    # attn_out shape    : (batch, 124, 200)
+    # attn_weights shape: (batch, 8, 124, 124)
 
     # Step C: Residual connection + Layer Normalisation + post-attention dropout
-    x = LayerNormalization(name='attn_norm')(attn_out + x)  # (batch, 124, 100)
-    x = Dropout(attn_dropout, name='attn_drop')(x)           # (batch, 124, 100)
+    x = LayerNormalization(name='attn_norm')(attn_out + x)  # (batch, 124, 200)
+    x = Dropout(attn_dropout, name='attn_drop')(x)           # (batch, 124, 200)
 
-    # Step D: FFN (Transformer-style point-wise) + Stats pooling
+    # Step D: FFN (Transformer-style point-wise) projects to 200
     ffn = Dense(256, activation='relu', name='ffn1',
                 kernel_regularizer=keras.regularizers.L2(1e-4))(x)
     ffn = Dropout(attn_dropout, name='ffn_drop')(ffn)
-    ffn = Dense(100, name='ffn2',
+    ffn = Dense(200, name='ffn2',
                 kernel_regularizer=keras.regularizers.L2(1e-4))(ffn)
-    x = LayerNormalization(name='ffn_norm')(ffn + x)   # (batch, 124, 100)
+    x = LayerNormalization(name='ffn_norm')(ffn + x)   # (batch, 124, 200)
 
-    # Stats pooling — replaces scalar temporal pooling
-    x_mean = ops.mean(x, axis=1)                        # (batch, 100)
-    x_max  = ops.max(x, axis=1)                         # (batch, 100)
-    context = concatenate([x_mean, x_max], axis=-1)     # (batch, 200)
+    # Stats pooling
+    x_mean = ops.mean(x, axis=1)                        # (batch, 200)
+    x_max  = ops.max(x, axis=1)                         # (batch, 200)
+    context = x_mean + x_max                            # (batch, 200)
 
     # ── Dense classifier head ────────────────────────────────────────────────────
     # L2 increased from 1e-3 → 3e-3 to add stronger weight-decay pressure on
@@ -249,7 +241,7 @@ def build_mcldnn_attention_extractor(classes: int = 5,
     """
     Build the MCLDNN-Attention EXTRACTOR model for interpretability.
 
-    Dual output: [softmax (batch, classes), attn_weights (batch, 4, 124, 124)]
+    Dual output: [softmax (batch, classes), attn_weights (batch, 8, 124, 124)]
     Loads weights from a checkpoint trained by build_mcldnn_attention() —
     the graph is identical, so weight loading works layer-by-layer by name.
 
@@ -314,7 +306,7 @@ if __name__ == '__main__':
     extractor = build_mcldnn_attention_extractor(classes=5)
     out_soft2, out_attn = extractor.predict([dummy1, dummy2, dummy3], verbose=0)
     print(f"Extractor softmax shape    : {out_soft2.shape}  (expect (4, 5))")
-    print(f"Extractor attn_weights shape: {out_attn.shape}  (expect (4, 4, 124, 124))")
+    print(f"Extractor attn_weights shape: {out_attn.shape}  (expect (4, 8, 124, 124))")
     assert out_soft2.shape == (4, 5)
-    assert out_attn.shape  == (4, 4, 124, 124), f"Wrong attn shape: {out_attn.shape}"
+    assert out_attn.shape  == (4, 8, 124, 124), f"Wrong attn shape: {out_attn.shape}"
     print("All shape checks PASSED")
