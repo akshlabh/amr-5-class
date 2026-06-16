@@ -212,7 +212,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def build_mcldnn_attention(classes: int = 5,
-                           dropout_rate: float = 0.4) -> Model:
+                           dropout_rate: float = 0.6) -> Model:
     """
     Build and compile the MCLDNN-Attention TRAINING model.
 
@@ -243,7 +243,7 @@ def build_mcldnn_attention(classes: int = 5,
 
 
 def build_mcldnn_attention_extractor(classes: int = 5,
-                                     dropout_rate: float = 0.4,
+                                     dropout_rate: float = 0.6,
                                      weights_path: str = None) -> Model:
     """
     Build the MCLDNN-Attention EXTRACTOR model for interpretability.
