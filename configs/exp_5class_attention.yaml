@@ -56,7 +56,7 @@ training:
     "BPSK":  1.0
     "QPSK":  1.0
     "8PSK":  1.0
-    "QAM16": 2.4
+    "QAM16": 2.5
     "QAM64": 1.5
 
 output:
