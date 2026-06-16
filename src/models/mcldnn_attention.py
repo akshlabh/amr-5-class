@@ -139,6 +139,12 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     # Reshape for sequence model
     x = Reshape((124, 100), name='reshape_final')(x) # (batch, 124, 100)
 
+    # NEW: extra temporal conv to extract fine amplitude features
+    x = Conv1D(100, 3, padding='causal', activation='relu',
+               name='conv_temporal',
+               kernel_regularizer=keras.regularizers.L2(1e-4))(x)
+    x = LayerNormalization(name='pre_attn_norm')(x)   # stabilise before attention
+
     # ── ATTENTION BLOCK — replaces both LSTM layers ────────────────────────────
 
     # Step A: Fixed sinusoidal positional encoding (Vaswani et al. 2017)
@@ -206,7 +212,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def build_mcldnn_attention(classes: int = 5,
-                           dropout_rate: float = 0.5) -> Model:
+                           dropout_rate: float = 0.4) -> Model:
     """
     Build and compile the MCLDNN-Attention TRAINING model.
 
@@ -237,7 +243,7 @@ def build_mcldnn_attention(classes: int = 5,
 
 
 def build_mcldnn_attention_extractor(classes: int = 5,
-                                     dropout_rate: float = 0.5,
+                                     dropout_rate: float = 0.4,
                                      weights_path: str = None) -> Model:
     """
     Build the MCLDNN-Attention EXTRACTOR model for interpretability.
