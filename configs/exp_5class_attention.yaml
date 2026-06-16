@@ -48,7 +48,7 @@ training:
   epochs: 10000
   batch_size: 400
   dropout_rate: 0.6           # increased back to 0.6
-  early_stopping_patience: 17
+  early_stopping_patience: 25
   reduce_lr_patience: 10      # reduced from 15 — faster LR decay
   reduce_lr_factor: 0.5
   min_lr: 1.0e-7
