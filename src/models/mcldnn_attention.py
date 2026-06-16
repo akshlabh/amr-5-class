@@ -183,7 +183,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     out = Dense(128, activation='selu', name='fc1',
                 kernel_regularizer=keras.regularizers.L2(3e-3))(context)
     out = Dropout(dr, name='drop1')(out)
-    out = Dense(64, activation='selu', name='fc2',
+    out = Dense(128, activation='selu', name='fc2',
                 kernel_regularizer=keras.regularizers.L2(3e-3))(out)
     out = Dropout(dr, name='drop2')(out)
     softmax_out = Dense(classes, activation='softmax', name='softmax')(out)
