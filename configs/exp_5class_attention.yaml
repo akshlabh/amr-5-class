@@ -57,8 +57,8 @@ training:
     "BPSK":  1.0
     "QPSK":  1.0
     "8PSK":  1.0
-    "QAM16": 2.0
-    "QAM64": 2.0
+    "QAM16": 2.5
+    "QAM64": 2.5
 
 output:
   base_dir:        "experiments/5class_attention"
