@@ -174,27 +174,18 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     x = LayerNormalization(name='attn_norm')(attn_out + x)  # (batch, 124, 100)
     x = Dropout(attn_dropout, name='attn_drop')(x)           # (batch, 124, 100)
 
-    # Step D: Learned temperature temporal pooling
-    # WHY learned temperature:
-    #   At low SNR  → network learns τ large  → softmax spreads → global average
-    #               (safe: noise averages out across all 124 steps)
-    #   At high SNR → network learns τ small  → softmax sharpens → selective focus
-    #               (useful: model attends to specific symbol boundaries/transitions)
-    # This is a single scalar parameter (no extra capacity, < 1 extra parameter).
-    # It lets attention behave as LSTM-style averaging at low SNR while
-    # recovering sharp selective attention at high SNR.
-    score = Dense(1, name='temporal_score')(x)              # (batch, 124, 1)
-    # log_tau initialised to 0 → tau=1 at start (neutral).  Trained end-to-end.
-    log_tau = keras.Variable(
-        initializer=keras.initializers.Zeros(), shape=(), dtype='float32',
-        trainable=True, name='log_tau'
-    )
-    tau      = ops.exp(log_tau)                             # always positive
-    score_t  = score / (tau + 1e-6)                        # temperature scaling
-    alpha    = Softmax(axis=1, name='temporal_alpha')(score_t)  # (batch, 124, 1)
-    alpha_T  = ops.transpose(alpha, axes=(0, 2, 1))         # (batch, 1, 124)
-    context  = ops.matmul(alpha_T, x)                       # (batch, 1, 100)
-    context  = Reshape((100,), name='context')(context)     # (batch, 100)
+    # Step D: FFN (Transformer-style point-wise) + Stats pooling
+    ffn = Dense(256, activation='relu', name='ffn1',
+                kernel_regularizer=keras.regularizers.L2(1e-4))(x)
+    ffn = Dropout(attn_dropout, name='ffn_drop')(ffn)
+    ffn = Dense(100, name='ffn2',
+                kernel_regularizer=keras.regularizers.L2(1e-4))(ffn)
+    x = LayerNormalization(name='ffn_norm')(ffn + x)   # (batch, 124, 100)
+
+    # Stats pooling — replaces scalar temporal pooling
+    x_mean = ops.mean(x, axis=1)                        # (batch, 100)
+    x_max  = ops.max(x, axis=1)                         # (batch, 100)
+    context = concatenate([x_mean, x_max], axis=-1)     # (batch, 200)
 
     # ── Dense classifier head ────────────────────────────────────────────────────
     # L2 increased from 1e-3 → 3e-3 to add stronger weight-decay pressure on

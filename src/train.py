@@ -335,15 +335,6 @@ def main():
         ),
     ]
 
-    # ── Class Weights ────────────────────────────────────────────────────────
-    class_weights_cfg = tr_cfg.get('class_weights', None)
-    class_weights = None
-    if class_weights_cfg and is_attention:
-        class_weights = {}
-        for i, cls in enumerate(selected_classes):
-            class_weights[i] = float(class_weights_cfg.get(cls, 1.0))
-        print(f"[train] Using class weights (attention only): {class_weights}")
-
     # ── Train ────────────────────────────────────────────────────────────────
     # The attention training model has a SINGLE softmax output (just like the
     # regular MCLDNN), so Y_train / Y_val / Y_test are passed directly.
@@ -356,8 +347,7 @@ def main():
         verbose=2,
         validation_data=(inp_val, Y_val),
         callbacks=callbacks,
-        sample_weight=sample_weights,
-        class_weight=class_weights
+        sample_weight=sample_weights
     )
 
     # ── Save training curves ──────────────────────────────────────────────────
