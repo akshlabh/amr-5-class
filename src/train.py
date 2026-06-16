@@ -103,6 +103,7 @@ def main():
     l2_lstm          = tr_cfg.get('l2_lstm',  1e-4)      # default 1e-4 matches original paper
     snr_weighted     = tr_cfg.get('snr_weighted', False)  # SNR-proportional sample weights
     initial_lr       = tr_cfg.get('initial_lr', 1e-3)    # default 1e-3 (Adam, original paper)
+    class_weights_cfg= tr_cfg.get('class_weights', None) # class-specific penalty weights
 
     # Transfer-learning config (4-class only)
     transfer_from           = cfg.get('transfer_from', None)
@@ -340,6 +341,14 @@ def main():
     # regular MCLDNN), so Y_train / Y_val / Y_test are passed directly.
     # Attention weight extraction happens only in evaluate_attention.py via
     # the separate build_mcldnn_attention_extractor() model.
+    
+    class_weight_dict = None
+    if class_weights_cfg is not None:
+        class_weight_dict = {}
+        for i, cls in enumerate(selected_classes):
+            class_weight_dict[i] = float(class_weights_cfg.get(cls, 1.0))
+        print(f"[train] Using class weights: {class_weight_dict}")
+
     history = model.fit(
         inp_train, Y_train,
         batch_size=batch_size,
@@ -347,7 +356,8 @@ def main():
         verbose=2,
         validation_data=(inp_val, Y_val),
         callbacks=callbacks,
-        sample_weight=sample_weights
+        sample_weight=sample_weights,
+        class_weight=class_weight_dict
     )
 
     # ── Save training curves ──────────────────────────────────────────────────
