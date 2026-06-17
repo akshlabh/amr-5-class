@@ -172,8 +172,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
 
     # Stats pooling
     x_mean = ops.mean(x, axis=1)                        # (batch, 100)
-    x_max  = ops.max(x, axis=1)                         # (batch, 100)
-    context = concatenate([x_mean, x_max], axis=-1)     # (batch, 200)
+    context = x_mean                                    # (batch, 100)
 
     # ── Dense classifier head ────────────────────────────────────────────────────
     # L2 increased from 1e-3 → 3e-3 to add stronger weight-decay pressure on
