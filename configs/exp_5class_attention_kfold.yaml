@@ -36,7 +36,7 @@ kfold:
 training:
   epochs:                  10000
   batch_size:              400
-  early_stopping_patience: 10    # same as tuned attention
+  early_stopping_patience: 13    # same as tuned attention
   reduce_lr_patience:      5     # same as tuned attention
   reduce_lr_factor:        0.5
   min_lr:                  1.0e-7
@@ -46,8 +46,8 @@ training:
     "BPSK":  1.0
     "QPSK":  1.0
     "8PSK":  1.0
-    "QAM16": 2.2
-    "QAM64": 1.8
+    "QAM16": 2.0
+    "QAM64": 2.0
 
 output:
   base_dir: "experiments/5class_attention_kfold"
