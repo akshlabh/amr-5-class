@@ -32,6 +32,10 @@ training:
   reduce_lr_patience: 15
   reduce_lr_factor: 0.5
   min_lr: 1.0e-7
+  dropout_rate: 0.6          # stronger dropout (was 0.5) — model was memorising
+  l2_dense: 3.0e-3           # tighter weight-decay on fc1/fc2 (was 1e-3)
+  l2_lstm: 1.0e-4            # unchanged from paper
+  initial_lr: 0.001          # Adam default
 
 output:
   base_dir:        "experiments/5class_baseline"
