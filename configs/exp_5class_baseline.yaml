@@ -28,7 +28,7 @@ dataset:
 training:
   epochs: 10000
   batch_size: 400
-  early_stopping_patience: 100
+  early_stopping_patience: 42
   reduce_lr_patience: 15
   reduce_lr_factor: 0.5
   min_lr: 1.0e-7
