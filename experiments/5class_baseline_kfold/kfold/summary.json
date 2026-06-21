@@ -1,0 +1,44 @@
+{
+  "exp_name": "5class_baseline_kfold",
+  "n_folds": 5,
+  "fold_results": [
+    {
+      "fold": 0,
+      "val_acc": 0.5758749842643738,
+      "val_loss": 0.9946206212043762,
+      "best_epoch": 81,
+      "n_epochs": 101
+    },
+    {
+      "fold": 1,
+      "val_acc": 0.573437511920929,
+      "val_loss": 0.9352682828903198,
+      "best_epoch": 84,
+      "n_epochs": 104
+    },
+    {
+      "fold": 2,
+      "val_acc": 0.6385625004768372,
+      "val_loss": 0.9899308085441589,
+      "best_epoch": 101,
+      "n_epochs": 121
+    },
+    {
+      "fold": 3,
+      "val_acc": 0.5822499990463257,
+      "val_loss": 1.0719575881958008,
+      "best_epoch": 93,
+      "n_epochs": 113
+    },
+    {
+      "fold": 4,
+      "val_acc": 0.6228749752044678,
+      "val_loss": 1.1965755224227905,
+      "best_epoch": 104,
+      "n_epochs": 124
+    }
+  ],
+  "mean_val_acc": 0.5985999941825867,
+  "std_val_acc": 0.02684464767225515,
+  "best_fold": 2
+}
