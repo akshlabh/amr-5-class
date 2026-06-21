@@ -171,8 +171,9 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     x = LayerNormalization(name='ffn_norm')(ffn + x)   # (batch, 124, 100)
 
     # Stats pooling
-    x_max = ops.max(x, axis=1)                          # (batch, 100)
-    context = x_max                                     # (batch, 100)
+    x_mean = ops.mean(x, axis=1)                        # (batch, 100)
+    x_max  = ops.max(x, axis=1)                         # (batch, 100)
+    context = x_mean + x_max                            # (batch, 100)
 
     # ── Dense classifier head ────────────────────────────────────────────────────
     # L2 increased from 1e-3 → 3e-3 to add stronger weight-decay pressure on
