@@ -1,0 +1,53 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN-Attention — 5-Fold Cross-Validation
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Dataset : RML2016.10a (filtered to 5 classes, all 20 SNRs)
+# Model   : MCLDNN-Attention (identical hyperparameters to exp_5class_attention)
+#
+# Splitting:
+#   Per (mod, SNR) block of 1000 samples:
+#     200 → final held-out test (never seen during training)
+#     800 → 5 folds of 160 each (stratified train/val rotation)
+#   Test set: 20,000 samples evaluated ONCE after all 5 folds complete.
+#
+# Run:
+#   python src/train_kfold.py --config configs/exp_5class_attention_kfold.yaml
+# =============================================================================
+
+experiment:
+  name:  "5class_attention_kfold"
+  model: "mcldnn_attention"
+  seed:  2016
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+kfold:
+  n_folds: 5
+  seed:    2016       # controls block-level permutation for splitting
+
+training:
+  epochs:                  10000
+  batch_size:              400
+  early_stopping_patience: 10    # same as tuned attention
+  reduce_lr_patience:      5     # same as tuned attention
+  reduce_lr_factor:        0.5
+  min_lr:                  1.0e-7
+  dropout_rate:            0.6   # same as tuned attention
+  initial_lr:              0.0005 # same as tuned attention
+  class_weights:
+    "BPSK":  1.0
+    "QPSK":  1.0
+    "8PSK":  1.0
+    "QAM16": 2.2
+    "QAM64": 1.8
+
+output:
+  base_dir: "experiments/5class_attention_kfold"

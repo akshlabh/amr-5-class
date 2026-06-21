@@ -1,0 +1,49 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN Baseline — 5-Fold Cross-Validation
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Dataset : RML2016.10a (filtered to 5 classes, all 20 SNRs)
+# Model   : MCLDNN (baseline — identical hyperparameters to exp_5class_baseline)
+#
+# Splitting:
+#   Per (mod, SNR) block of 1000 samples:
+#     200 → final held-out test (never seen during training)
+#     800 → 5 folds of 160 each (stratified train/val rotation)
+#   Test set: 20,000 samples evaluated ONCE after all 5 folds complete.
+#
+# Run:
+#   python src/train_kfold.py --config configs/exp_5class_baseline_kfold.yaml
+# =============================================================================
+
+experiment:
+  name:  "5class_baseline_kfold"
+  model: "mcldnn"
+  seed:  2016
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+kfold:
+  n_folds: 5
+  seed:    2016       # controls block-level permutation for splitting
+
+training:
+  epochs:                  10000
+  batch_size:              400
+  early_stopping_patience: 20     # same as tuned baseline
+  reduce_lr_patience:      8      # same as tuned baseline
+  reduce_lr_factor:        0.5
+  min_lr:                  1.0e-7
+  dropout_rate:            0.5    # paper default
+  l2_dense:                1.0e-3 # paper default
+  l2_lstm:                 1.0e-4 # paper default
+  initial_lr:              0.001  # Adam default
+
+output:
+  base_dir: "experiments/5class_baseline_kfold"
