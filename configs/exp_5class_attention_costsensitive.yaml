@@ -1,0 +1,74 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN-Attention — Cost-Sensitive Cross-Entropy Loss
+# =============================================================================
+# Classes  : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Dataset  : RML2016.10a (all 20 SNRs)
+# Model    : MCLDNN-Attention (unchanged architecture)
+# Loss     : CostSensitiveCrossEntropy — penalises QAM16↔QAM64 confusion
+#            by factor alpha=2.0 relative to all other misclassifications.
+#
+# Cost matrix (alpha=2.0):
+#   True\Pred  BPSK  QPSK  8PSK  QAM16  QAM64
+#   BPSK         0     1     1     1      1
+#   QPSK         1     0     1     1      1
+#   8PSK         1     1     0     1      1
+#   QAM16        1     1     1     0      2.0  ← high cost
+#   QAM64        1     1     1     2.0    0    ← high cost
+#
+# Run:
+#   python src/train_costsensitive.py \
+#       --config configs/exp_5class_attention_costsensitive.yaml
+#
+# Compare results with:
+#   experiments/5class_attention/results/   (standard attention baseline)
+# =============================================================================
+
+experiment:
+  name:  "5class_attention_costsensitive"
+  model: "mcldnn_attention"
+  seed:  2016
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+# ── Cost-sensitive loss configuration ────────────────────────────────────────
+# alpha        : penalty multiplier for high-cost confusion pairs
+# high_cost_pairs : list of [true_class, predicted_class] pairs to penalise
+# label_smoothing : applied to the CE component (same as standard attention run)
+cost_matrix:
+  alpha:          2.0
+  label_smoothing: 0.1
+  high_cost_pairs:
+    - ["QAM16", "QAM64"]
+    - ["QAM64", "QAM16"]
+
+# ── Training hyperparameters (identical to exp_5class_attention.yaml) ─────────
+training:
+  epochs:                  10000
+  batch_size:              400
+  dropout_rate:            0.6
+  early_stopping_patience: 10
+  reduce_lr_patience:      5
+  reduce_lr_factor:        0.5
+  min_lr:                  1.0e-7
+  initial_lr:              0.0005
+  class_weights:
+    "BPSK":  1.0
+    "QPSK":  1.0
+    "8PSK":  1.0
+    "QAM16": 2.2
+    "QAM64": 1.8
+
+# ── Output paths ──────────────────────────────────────────────────────────────
+output:
+  base_dir:        "experiments/5class_attention_costsensitive"
+  checkpoint_path: "experiments/5class_attention_costsensitive/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_attention_costsensitive/logs"
+  figure_dir:      "experiments/5class_attention_costsensitive/figures"
+  result_dir:      "experiments/5class_attention_costsensitive/results"
