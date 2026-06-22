@@ -42,7 +42,7 @@ dataset:
 # high_cost_pairs : list of [true_class, predicted_class] pairs to penalise
 # label_smoothing : applied to the CE component (same as standard attention run)
 cost_matrix:
-  alpha:          2.0
+  alpha:          1.5
   label_smoothing: 0.1
   high_cost_pairs:
     - ["QAM16", "QAM64"]
