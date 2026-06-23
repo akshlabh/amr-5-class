@@ -216,6 +216,16 @@ def main():
                                        learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
+    elif model_type == 'lstm64':
+        from src.models.mcldnn_lstm64 import MCLDNN_LSTM64
+        model = MCLDNN_LSTM64(weights=resume_weights, classes=n_classes,
+                              dropout_rate=dropout_rate, l2_dense=l2_dense,
+                              l2_lstm=l2_lstm)
+    elif model_type == 'lstm1':
+        from src.models.mcldnn_lstm1 import MCLDNN_LSTM1
+        model = MCLDNN_LSTM1(weights=resume_weights, classes=n_classes,
+                             dropout_rate=dropout_rate, l2_dense=l2_dense,
+                             l2_lstm=l2_lstm)
     elif branch == 'full':
         from src.models.mcldnn import MCLDNN
         model = MCLDNN(weights=resume_weights, classes=n_classes,

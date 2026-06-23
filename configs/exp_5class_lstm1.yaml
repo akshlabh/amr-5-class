@@ -1,0 +1,53 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN — Single LSTM layer (lstm_2 removed)
+# =============================================================================
+# Classes  : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Dataset  : RML2016.10a (all 20 SNRs)
+# Model    : MCLDNN with 1×LSTM-128  (~273K params vs baseline ~404K)
+# Split    : Global shuffle 60/20/20 (seed=2016) — same as baseline & attention
+#
+# Parameter comparison:
+#   Baseline  (2×LSTM-128) : ~404K
+#   This      (1×LSTM-128) : ~273K
+#   LSTM-64   (2×LSTM-64)  : ~222K
+#   Attention              : ~205K
+#
+# Run:
+#   python src/train_variants.py --config configs/exp_5class_lstm1.yaml
+# =============================================================================
+
+experiment:
+  name:   "5class_lstm1"
+  model:  "lstm1"          # selects MCLDNN_LSTM1 from mcldnn_lstm1.py
+  seed:   2016
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+  shuffle_split: true          # global 60/20/20 — same split as baseline & attention
+
+shuffle_split: true            # train.py reads this at top-level
+
+training:
+  epochs:                  10000
+  batch_size:              400
+  early_stopping_patience: 20
+  reduce_lr_patience:      8
+  reduce_lr_factor:        0.5
+  min_lr:                  1.0e-7
+  dropout_rate:            0.5   # paper default
+  l2_dense:                1.0e-3
+  l2_lstm:                 1.0e-4
+  initial_lr:              0.001
+
+output:
+  base_dir:        "experiments/5class_lstm1"
+  checkpoint_path: "experiments/5class_lstm1/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_lstm1/logs"
+  figure_dir:      "experiments/5class_lstm1/figures"
+  result_dir:      "experiments/5class_lstm1/results"
