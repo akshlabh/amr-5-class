@@ -103,6 +103,10 @@ def main():
     raw_pairs = cm_cfg.get('high_cost_pairs',
                            [['QAM16', 'QAM64'], ['QAM64', 'QAM16']])
     high_cost_pairs = [tuple(p) for p in raw_pairs]
+    correct_class_costs = {
+        cls: float(cost)
+        for cls, cost in cm_cfg.get('correct_class_costs', {}).items()
+    }
     label_smoothing = float(cm_cfg.get('label_smoothing', 0.1))
 
     out_cfg   = cfg['output']
@@ -122,6 +126,7 @@ def main():
         classes=selected_classes,
         high_cost_pairs=high_cost_pairs,
         alpha=alpha,
+        correct_class_costs=correct_class_costs,
     )
 
     print(f"\n{'='*60}")
@@ -130,6 +135,7 @@ def main():
     print(f"  Dropout     : {dropout_rate}   Initial LR : {initial_lr}")
     print(f"  ES Patience : {es_patience}    RLR Patience: {rlr_patience}")
     print(f"  Alpha (QAM16↔QAM64 penalty) : {alpha}")
+    print(f"  Correct-class cost overrides : {correct_class_costs or 'none'}")
     print(f"  Label smoothing : {label_smoothing}")
     print(f"  Classes     : {selected_classes}")
     print(f"  Checkpoint  : {ckpt_path}")
@@ -143,6 +149,7 @@ def main():
     cm_record = {
         'alpha':            alpha,
         'high_cost_pairs':  [list(p) for p in high_cost_pairs],
+        'correct_class_costs': correct_class_costs,
         'label_smoothing':  label_smoothing,
         'cost_matrix':      C.tolist(),
     }

@@ -60,7 +60,8 @@ import keras
 
 def build_cost_matrix(classes: list,
                       high_cost_pairs: list,
-                      alpha: float = 2.0) -> np.ndarray:
+                      alpha: float = 2.0,
+                      correct_class_costs: dict | None = None) -> np.ndarray:
     """
     Build a (n_classes × n_classes) cost matrix.
 
@@ -72,11 +73,15 @@ def build_cost_matrix(classes: list,
                       should receive penalty α instead of 1.
                       Example: [('QAM16', 'QAM64'), ('QAM64', 'QAM16')]
     alpha           : float  penalty multiplier for high-cost pairs (default 2.0)
+    correct_class_costs : optional mapping of class name to its diagonal cost.
+                      Classes not listed retain the default correct cost of 0.
+                      Values must be at least -1 because the loss multiplier is
+                      (1 + expected_cost).
 
     Returns
     -------
     C : np.ndarray  shape (n_classes, n_classes)  float32
-        C[i, i] = 0   (no cost for correct prediction)
+        C[i, i] = 0   (default cost for correct prediction)
         C[i, j] = 1   (default cost for wrong prediction)
         C[i, j] = α   (elevated cost for specified pairs)
     """
@@ -85,6 +90,18 @@ def build_cost_matrix(classes: list,
     np.fill_diagonal(C, 0.0)
 
     idx = {cls: i for i, cls in enumerate(classes)}
+
+    for cls, cost in (correct_class_costs or {}).items():
+        if cls not in idx:
+            raise ValueError(f"Class '{cls}' not in classes list: {classes}")
+        cost = float(cost)
+        if cost < -1.0:
+            raise ValueError(
+                f"Correct-class cost for '{cls}' is {cost}; values below -1 "
+                "make the loss multiplier negative."
+            )
+        C[idx[cls], idx[cls]] = cost
+
     for true_cls, pred_cls in high_cost_pairs:
         if true_cls not in idx:
             raise ValueError(f"Class '{true_cls}' not in classes list: {classes}")

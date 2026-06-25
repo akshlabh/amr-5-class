@@ -1,0 +1,50 @@
+# MCLDNN attention training with QAM-specific shifted costs.
+# Rows are true classes and columns are predicted classes.
+#
+# Requested QAM entries:
+#   True\Pred  QAM16  QAM64
+#   QAM16       -1.0    1.5
+#   QAM64        1.5   -1.0
+#
+# All other correct predictions cost 0; all other errors cost 1.
+
+experiment:
+  name: "5class_attention_qam_shifted_cost"
+  model: "mcldnn_attention"
+  seed: 2016
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+cost_matrix:
+  alpha: 1.5
+  label_smoothing: 0.1
+  high_cost_pairs:
+    - ["QAM16", "QAM64"]
+    - ["QAM64", "QAM16"]
+  correct_class_costs:
+    "QAM16": -1.0
+    "QAM64": -1.0
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.6
+  early_stopping_patience: 10
+  reduce_lr_patience: 5
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.0005
+
+output:
+  base_dir: "experiments/5class_attention_qam_shifted_cost"
+  checkpoint_path: "experiments/5class_attention_qam_shifted_cost/checkpoints/best_model.weights.h5"
+  log_dir: "experiments/5class_attention_qam_shifted_cost/logs"
+  figure_dir: "experiments/5class_attention_qam_shifted_cost/figures"
+  result_dir: "experiments/5class_attention_qam_shifted_cost/results"
