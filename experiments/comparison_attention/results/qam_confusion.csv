@@ -1,0 +1,3 @@
+confusion,normal_attn,cost_sensitive
+QAM16→QAM64,0.16475,0.17375
+QAM64→QAM16,0.26675,0.48975

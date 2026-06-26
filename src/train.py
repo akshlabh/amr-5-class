@@ -164,7 +164,7 @@ def main():
     # ── Prepare inputs (branch-aware) ─────────────────────────────────────────
     def prepare_inputs(X):
         """
-        Return the model input list/array for the selected branch.
+        Return the model input list/array for the selected branch/model.
 
         Branch inputs
         -------------
@@ -173,6 +173,16 @@ def main():
         'Q'   : [Q_1D  (N,128,1)]
         'IQ'  : [IQ_4D (N,2,128,1)]
         """
+        if model_type == 'mcldnn_attention_phys':
+            from src.features.signal_features import prepare_physical_features
+            X_amp, X_phase = prepare_physical_features(X)
+            return [
+                np.expand_dims(X, axis=3),           # (N, 2, 128, 1) — IQ 2D
+                np.expand_dims(X[:, 0, :], axis=2),  # (N, 128, 1)    — I channel
+                np.expand_dims(X[:, 1, :], axis=2),  # (N, 128, 1)    — Q channel
+                X_amp,                               # (N, 128, 1)    — amplitude
+                X_phase,                             # (N, 128, 2)    — phase cos/sin
+            ]
         if branch == 'full':
             return [
                 np.expand_dims(X, axis=3),           # (N, 2, 128, 1) — IQ 2D
@@ -193,13 +203,18 @@ def main():
     # For single-input branch variants Keras 3 expects a plain array, not a
     # 1-element list.  Unwrap here so model.fit / evaluate / predict don't emit:
     #   "The structure of `inputs` doesn't match the expected structure."
-    if branch != 'full':
+    if branch != 'full' and model_type != 'mcldnn_attention_phys':
         inp_train = inp_train[0]   # (N, 128, 1)  or  (N, 2, 128, 1)
         inp_val   = inp_val[0]
         inp_test  = inp_test[0]
 
     # Print input shapes (handle single-input variants gracefully)
-    if branch == 'full':
+    if model_type == 'mcldnn_attention_phys':
+        print(f"[train] Input shapes: "
+              f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "
+              f"Q={inp_train[2].shape}  Amp={inp_train[3].shape}  "
+              f"Phase={inp_train[4].shape}")
+    elif branch == 'full':
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  Q={inp_train[2].shape}")
     else:
@@ -207,13 +222,20 @@ def main():
 
     # ── Build model ────────────────────────────────────────────────────────────
     resume_weights = args.resume
-    is_attention   = (model_type == 'mcldnn_attention')
+    is_attention   = model_type in ('mcldnn_attention', 'mcldnn_attention_phys')
 
-    if is_attention:
+    if model_type == 'mcldnn_attention':
         from src.models.mcldnn_attention import build_mcldnn_attention
         model = build_mcldnn_attention(classes=n_classes,
                                        dropout_rate=dropout_rate,
                                        learning_rate=initial_lr)
+        if resume_weights:
+            model.load_weights(resume_weights)
+    elif model_type == 'mcldnn_attention_phys':
+        from src.models.mcldnn_attention_phys import build_mcldnn_attention_phys
+        model = build_mcldnn_attention_phys(classes=n_classes,
+                                            dropout_rate=dropout_rate,
+                                            learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
     elif model_type == 'lstm64':
