@@ -1,5 +1,5 @@
 # =============================================================================
-# Experiment: 5-class MCLDNN-Attention with physical IQ features
+# Experiment: 5-class MCLDNN-Attention with gated physical features (v2)
 # =============================================================================
 # Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
 # Model   : mcldnn_attention_phys
@@ -7,26 +7,37 @@
 #
 # Purpose
 # -------
-# Test the professor's physical-feature hypothesis cleanly:
+# Test the professor's physical-feature hypothesis with a more robust design:
 #
-#   • QPSK vs 8PSK confusion should improve from explicit phase structure.
-#   • QAM16 vs QAM64 confusion should improve from explicit amplitude/radius
-#     variation.
+#   - QAM16 vs QAM64: expose amplitude distribution/variation.
+#   - QPSK vs 8PSK  : expose rotation-aware differential phase.
 #
-# This config intentionally does NOT use the QAM shifted cost matrix and does
-# NOT use class weights. That keeps this run as a representation-level test,
-# not a loss-penalty test.
+# Physical inputs prepared by src/features/signal_features.py:
 #
-# Physical inputs added by src/train.py for this model:
-#   input4_amplitude    : A(t) normalized per sample by mean amplitude
-#   input5_phase_sincos : [cos(phi), sin(phi)] = [I/A, Q/A]
+#   input4_amplitude_features:
+#       [A(t), A(t)^2, delta_A(t), abs(delta_A(t))]
 #
-# Existing attention model/configs are not modified.
+#   input5_dphase_sincos:
+#       [cos(dphi(t)), sin(dphi(t))]
+#
+# Fusion design:
+#   The raw IQ path goes through CNN + self-attention normally. The physical
+#   branch is separate and is fused after attention pooling using:
+#
+#       final_context = main_context + gate * physics_context
+#
+# This run intentionally uses standard loss first, not the QAM shifted-cost
+# loss, so the effect is representation-level rather than penalty-level.
+#
+# Note:
+#   This v2 architecture is not compatible with old v1 physical-feature
+#   checkpoints. Train from scratch; do not use --resume with the old
+#   experiments/5class_attention_phys/checkpoints/best_model.weights.h5.
 # =============================================================================
 
 experiment:
   name: "5class_attention_phys"
-  description: "MCLDNN attention with amplitude and wrap-safe phase features before self-attention; standard CE loss"
+  description: "MCLDNN attention with amplitude-variation and differential-phase features, late gated fusion, standard CE loss"
   track: "attention_phys"
   seed: 2016
   model: "mcldnn_attention_phys"

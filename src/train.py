@@ -172,6 +172,8 @@ def main():
         'I'   : [I_1D  (N,128,1)]
         'Q'   : [Q_1D  (N,128,1)]
         'IQ'  : [IQ_4D (N,2,128,1)]
+        'mcldnn_attention_phys':
+                [IQ_4D, I_1D, Q_1D, amplitude features, dphase features]
         """
         if model_type == 'mcldnn_attention_phys':
             from src.features.signal_features import prepare_physical_features
@@ -212,8 +214,8 @@ def main():
     if model_type == 'mcldnn_attention_phys':
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "
-              f"Q={inp_train[2].shape}  Amp={inp_train[3].shape}  "
-              f"Phase={inp_train[4].shape}")
+              f"Q={inp_train[2].shape}  AmpFeat={inp_train[3].shape}  "
+              f"DPhase={inp_train[4].shape}")
     elif branch == 'full':
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  Q={inp_train[2].shape}")

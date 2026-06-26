@@ -1,0 +1,5 @@
+model,qam16_to_qam64,qam64_to_qam16,qpsk_to_8psk,8psk_to_qpsk
+Normal Attn,0.2255,0.368,0.08225,0.05575
+Cost-Sensitive,0.16475,0.26675,0.238,0.08425
+QAM-Shifted Cost,0.17375,0.48975,0.16675,0.1045
+Phys Features Attn,0.117,0.422,0.146,0.0965

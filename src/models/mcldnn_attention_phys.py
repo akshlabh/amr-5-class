@@ -1,16 +1,26 @@
 """
-mcldnn_attention_phys.py — MCLDNN-Attention with physical IQ features
-=====================================================================
+mcldnn_attention_phys.py — MCLDNN-Attention with gated physical features
+========================================================================
 
-This model keeps the existing MCLDNN-Attention CNN backbone intact and adds
-two deterministic feature inputs before self-attention:
+Version 2 of the physical-feature attention model.
 
-  • amplitude A(t), useful for QAM16 vs QAM64
-  • phase unit-vector [cos(phi), sin(phi)], useful for QPSK vs 8PSK
+The original MCLDNN-Attention path is kept intact:
 
-The extra features are fused immediately before MultiHeadAttention so each
-attention token contains both learned CNN features and explicit physical
-signal coordinates.
+    IQ / I / Q -> CNN fusion -> self-attention -> stats pooling
+
+The physical features are processed in a separate small branch:
+
+    amplitude features      : [A(t), A(t)^2, ΔA(t), |ΔA(t)|]
+    differential phase      : [cos(dphi), sin(dphi)]
+
+Then the physical branch is fused *after attention pooling* using a learned
+gate:
+
+    final_context = main_context + gate * physics_context
+
+This gives the model an escape hatch: when physical features are noisy or not
+helpful, the gate can suppress them instead of forcing them into the attention
+tokens.
 """
 
 import keras
@@ -19,6 +29,7 @@ from keras.layers import (
     Input, Dense, Conv1D, Conv2D,
     Dropout, Reshape, concatenate,
     MultiHeadAttention, LayerNormalization,
+    Multiply, Add,
 )
 import keras.ops as ops
 import numpy as np
@@ -36,15 +47,15 @@ def _sinusoidal_encoding(seq_len: int, d_model: int) -> np.ndarray:
 
 def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     """
-    Build the physical-feature attention graph.
+    Build the gated physical-feature attention graph.
 
     Inputs
     ------
     input1 : (batch, 2, 128, 1)  raw IQ frame
     input2 : (batch, 128, 1)     I channel
     input3 : (batch, 128, 1)     Q channel
-    input4 : (batch, 128, 1)     normalized amplitude
-    input5 : (batch, 128, 2)     phase [cos(phi), sin(phi)]
+    input4 : (batch, 128, 4)     [A, A², ΔA, |ΔA|]
+    input5 : (batch, 128, 2)     [cos(dphi), sin(dphi)]
 
     Returns
     -------
@@ -52,18 +63,19 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     """
     dr = dropout_rate
     l2_cnn = keras.regularizers.L2(1e-4)
+    l2_dense = keras.regularizers.L2(3e-3)
 
-    # Original three MCLDNN inputs
+    # Original three MCLDNN inputs.
     input1 = Input(shape=(2, 128, 1), name='input1')
     input2 = Input(shape=(128, 1), name='input2')
     input3 = Input(shape=(128, 1), name='input3')
 
-    # New physical feature inputs
-    input4 = Input(shape=(128, 1), name='input4_amplitude')
-    input5 = Input(shape=(128, 2), name='input5_phase_sincos')
+    # Physical feature inputs.
+    input4 = Input(shape=(128, 4), name='input4_amplitude_features')
+    input5 = Input(shape=(128, 2), name='input5_dphase_sincos')
 
     # ------------------------------------------------------------------
-    # Original MCLDNN CNN block, same topology and names as attention model
+    # Original MCLDNN CNN block, same topology and names as attention model.
     # ------------------------------------------------------------------
     x1 = Conv2D(50, (2, 8), padding='same', activation='relu',
                 name='conv1_1', kernel_regularizer=l2_cnn)(input1)
@@ -86,25 +98,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     x = Reshape((124, 100), name='reshape_final')(x)
 
     # ------------------------------------------------------------------
-    # Physical feature branches, aligned to 124 time steps using valid Conv1D
-    # ------------------------------------------------------------------
-    amp_feat = Conv1D(16, 5, padding='valid', activation='relu',
-                      name='amp_conv',
-                      kernel_regularizer=l2_cnn)(input4)
-
-    phase_feat = Conv1D(16, 5, padding='valid', activation='relu',
-                        name='phase_conv',
-                        kernel_regularizer=l2_cnn)(input5)
-
-    # Fuse learned CNN features with explicit physical features, then project
-    # back to d_model=100 so the attention block stays unchanged.
-    x = concatenate([x, amp_feat, phase_feat], axis=-1,
-                    name='phys_feature_concat')
-    x = Dense(100, activation='relu', name='phys_feature_proj',
-              kernel_regularizer=l2_cnn)(x)
-
-    # ------------------------------------------------------------------
-    # Attention block
+    # Attention block on the learned IQ representation only.
     # ------------------------------------------------------------------
     pe = ops.convert_to_tensor(
         _sinusoidal_encoding(seq_len=124, d_model=100),
@@ -129,16 +123,59 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
                 kernel_regularizer=l2_cnn)(ffn)
     x = LayerNormalization(name='ffn_norm')(ffn + x)
 
-    # Same stats pooling and classifier head as current attention model.
     x_mean = ops.mean(x, axis=1)
     x_max = ops.max(x, axis=1)
-    context = x_mean + x_max
+    main_context = x_mean + x_max                         # (batch, 100)
 
+    # ------------------------------------------------------------------
+    # Separate physical branch.
+    # Conv1D(valid, kernel=5) aligns 128 raw feature steps to the same 124
+    # sequence length produced by conv4 in the main CNN path.
+    # ------------------------------------------------------------------
+    amp_seq = Conv1D(24, 5, padding='valid', activation='relu',
+                     name='amp_feat_conv',
+                     kernel_regularizer=l2_cnn)(input4)   # (batch, 124, 24)
+
+    phase_seq = Conv1D(24, 5, padding='valid', activation='relu',
+                       name='dphase_feat_conv',
+                       kernel_regularizer=l2_cnn)(input5) # (batch, 124, 24)
+
+    phys_seq = concatenate([amp_seq, phase_seq], axis=-1,
+                           name='phys_seq_concat')        # (batch, 124, 48)
+    phys_seq = Dense(64, activation='relu', name='phys_seq_proj',
+                     kernel_regularizer=l2_cnn)(phys_seq) # (batch, 124, 64)
+    phys_seq = Dropout(attn_dropout, name='phys_seq_drop')(phys_seq)
+
+    phys_mean = ops.mean(phys_seq, axis=1)
+    phys_max = ops.max(phys_seq, axis=1)
+    phys_context = phys_mean + phys_max                    # (batch, 64)
+    phys_context = Dense(100, activation='relu',
+                         name='phys_context_proj',
+                         kernel_regularizer=l2_cnn)(phys_context)
+
+    # ------------------------------------------------------------------
+    # Gated late fusion.
+    # The negative bias initializes the sigmoid gate below 0.5, so early
+    # training starts closer to the proven IQ-attention path and learns to open
+    # the physics branch only where it helps.
+    # ------------------------------------------------------------------
+    gate_in = concatenate([main_context, phys_context], axis=-1,
+                          name='phys_gate_input')          # (batch, 200)
+    gate = Dense(100, activation='sigmoid',
+                 bias_initializer=keras.initializers.Constant(-1.0),
+                 name='phys_gate',
+                 kernel_regularizer=l2_cnn)(gate_in)
+    gated_phys = Multiply(name='phys_gate_apply')([gate, phys_context])
+    context = Add(name='phys_gated_fusion')([main_context, gated_phys])
+
+    # ------------------------------------------------------------------
+    # Dense classifier head.
+    # ------------------------------------------------------------------
     out = Dense(128, activation='selu', name='fc1',
-                kernel_regularizer=keras.regularizers.L2(3e-3))(context)
+                kernel_regularizer=l2_dense)(context)
     out = Dropout(dr, name='drop1')(out)
     out = Dense(128, activation='selu', name='fc2',
-                kernel_regularizer=keras.regularizers.L2(3e-3))(out)
+                kernel_regularizer=l2_dense)(out)
     out = Dropout(dr, name='drop2')(out)
     softmax_out = Dense(classes, activation='softmax', name='softmax')(out)
 
@@ -149,7 +186,7 @@ def build_mcldnn_attention_phys(classes: int = 5,
                                 dropout_rate: float = 0.6,
                                 learning_rate: float = 1e-3) -> Model:
     """
-    Build and compile the standard-loss physical-feature attention model.
+    Build and compile the standard-loss gated physical-feature attention model.
     """
     inputs, softmax_out, _ = _build_graph(classes, dropout_rate)
     model = Model(inputs=inputs, outputs=softmax_out,
@@ -199,7 +236,7 @@ if __name__ == '__main__':
     dummy1 = np.zeros((4, 2, 128, 1), dtype='float32')
     dummy2 = np.zeros((4, 128, 1), dtype='float32')
     dummy3 = np.zeros((4, 128, 1), dtype='float32')
-    dummy4 = np.zeros((4, 128, 1), dtype='float32')
+    dummy4 = np.zeros((4, 128, 4), dtype='float32')
     dummy5 = np.zeros((4, 128, 2), dtype='float32')
 
     y = model.predict([dummy1, dummy2, dummy3, dummy4, dummy5], verbose=0)
