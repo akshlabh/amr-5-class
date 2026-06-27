@@ -49,8 +49,8 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     input1 : (batch, 2, 128, 1)  raw IQ frame
     input2 : (batch, 128, 1)     I channel
     input3 : (batch, 128, 1)     Q channel
-    input4 : (batch, 128, 12)    amplitude + multi-boundary peak channels
-    input5 : (batch, 13)         PAR / robust peak-tail global statistics
+    input4 : (batch, 128, 8)     amplitude + QAM16-boundary peak channels
+    input5 : (batch, 7)          PAR / peak-count global amplitude statistics
     """
     dr = dropout_rate
     l2_cnn = keras.regularizers.L2(1e-4)
@@ -59,8 +59,8 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     input1 = Input(shape=(2, 128, 1), name='input1')
     input2 = Input(shape=(128, 1), name='input2')
     input3 = Input(shape=(128, 1), name='input3')
-    input4 = Input(shape=(128, 12), name='input4_amplitude_peak_sequence')
-    input5 = Input(shape=(13,), name='input5_amplitude_peak_global')
+    input4 = Input(shape=(128, 8), name='input4_amplitude_peak_sequence')
+    input5 = Input(shape=(7,), name='input5_amplitude_peak_global')
 
     # ------------------------------------------------------------------
     # Original MCLDNN CNN block, same topology and layer names as attention.
@@ -217,8 +217,8 @@ if __name__ == '__main__':
     dummy1 = np.zeros((4, 2, 128, 1), dtype='float32')
     dummy2 = np.zeros((4, 128, 1), dtype='float32')
     dummy3 = np.zeros((4, 128, 1), dtype='float32')
-    dummy4 = np.zeros((4, 128, 12), dtype='float32')
-    dummy5 = np.zeros((4, 13), dtype='float32')
+    dummy4 = np.zeros((4, 128, 8), dtype='float32')
+    dummy5 = np.zeros((4, 7), dtype='float32')
 
     y = model.predict([dummy1, dummy2, dummy3, dummy4, dummy5], verbose=0)
     print(f"Training model output shape: {y.shape}")
