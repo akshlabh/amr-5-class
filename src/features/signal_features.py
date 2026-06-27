@@ -100,6 +100,152 @@ def extract_amplitude_features(X_raw: np.ndarray,
     ).astype(np.float32)
 
 
+def estimate_qam16_amplitude_boundary(X_raw: np.ndarray,
+                                      y_onehot: np.ndarray,
+                                      classes: list[str],
+                                      quantile: float = 95.0,
+                                      eps: float = 1e-8) -> float:
+    """
+    Estimate a robust QAM16 outer-amplitude boundary from training data only.
+
+    The boundary is computed on mean-normalized amplitude A(t).  Using a high
+    percentile rather than a hard maximum makes the threshold resistant to
+    noisy outliers while still describing the practical QAM16 outer envelope.
+
+    Parameters
+    ----------
+    X_raw : np.ndarray
+        Training IQ windows, shape (N, 2, T).
+    y_onehot : np.ndarray
+        One-hot labels for the same N windows.
+    classes : list[str]
+        Class names in one-hot order.
+    quantile : float
+        Percentile of QAM16 amplitudes used as the boundary.
+
+    Returns
+    -------
+    float
+        Scalar threshold T such that A(t) > T is treated as a QAM16-boundary
+        exceedance cue.
+    """
+    if "QAM16" not in classes:
+        raise ValueError("QAM16 must be present to estimate its amplitude boundary.")
+    Y = np.asarray(y_onehot)
+    if Y.ndim != 2 or Y.shape[0] != np.asarray(X_raw).shape[0]:
+        raise ValueError(
+            "Expected y_onehot with shape (N, C) matching X_raw; "
+            f"got y={Y.shape!r}, X={np.asarray(X_raw).shape!r}."
+        )
+
+    qam16_idx = classes.index("QAM16")
+    mask = np.argmax(Y, axis=1) == qam16_idx
+    if not np.any(mask):
+        raise ValueError("No QAM16 samples found in the provided training labels.")
+
+    amp_qam16 = _normalized_amplitude(np.asarray(X_raw)[mask], eps=eps)
+    boundary = float(np.percentile(amp_qam16.reshape(-1), quantile))
+    if not np.isfinite(boundary) or boundary <= 0:
+        raise ValueError(f"Invalid QAM16 amplitude boundary: {boundary!r}")
+    return boundary
+
+
+def extract_amplitude_peak_features(X_raw: np.ndarray,
+                                    qam16_boundary: float,
+                                    eps: float = 1e-8
+                                    ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute analytic QAM16/QAM64 peak and PAR features.
+
+    This is a more targeted amplitude representation than
+    extract_amplitude_features().  It makes the professor's physical cue
+    explicit: QAM64 should produce more samples that cross the learned QAM16
+    amplitude boundary.
+
+    Per-time-step channels, shape (N, T, 8)
+    --------------------------------------
+    0. A(t)                 : mean-normalized amplitude
+    1. A(t)^2               : normalized instantaneous power
+    2. delta_A(t)           : signed local amplitude change
+    3. |delta_A(t)|         : local amplitude variation
+    4. exceed_T(t)          : 1 if A(t) > T_qam16 else 0
+    5. excess_T(t)          : max(A(t) - T_qam16, 0)
+    6. relative_excess_T(t) : excess_T(t) / T_qam16
+    7. excess_power_T(t)    : relative_excess_T(t)^2
+
+    Global channels, shape (N, 7)
+    ----------------------------
+    0. log1p(PAR)           : log(1 + max(power) / mean(power))
+    1. peak_ratio           : fraction of samples crossing T_qam16
+    2. mean_excess          : mean amount above T_qam16
+    3. max_excess           : largest amount above T_qam16
+    4. amplitude_std        : spread of A(t)
+    5. amplitude_p95        : 95th percentile of A(t)
+    6. amplitude_p99        : 99th percentile of A(t)
+
+    Returns
+    -------
+    (seq_features, global_features)
+        seq_features shape    : (N, T, 8), dtype float32
+        global_features shape : (N, 7), dtype float32
+    """
+    T = float(qam16_boundary)
+    if not np.isfinite(T) or T <= 0:
+        raise ValueError(f"qam16_boundary must be a positive finite scalar; got {T!r}.")
+
+    amp = _normalized_amplitude(X_raw, eps=eps)
+    power = amp ** 2
+    delta_amp = np.diff(amp, axis=1, prepend=amp[:, :1])
+    abs_delta_amp = np.abs(delta_amp)
+
+    exceed = (amp > T).astype(np.float32)
+    excess = np.maximum(amp - T, 0.0).astype(np.float32)
+    rel_excess = excess / (T + eps)
+    excess_power = rel_excess ** 2
+
+    seq_features = np.stack(
+        [
+            amp,
+            power,
+            delta_amp,
+            abs_delta_amp,
+            exceed,
+            excess,
+            rel_excess,
+            excess_power,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+
+    par = np.max(power, axis=1) / (np.mean(power, axis=1) + eps)
+    peak_ratio = np.mean(exceed, axis=1)
+    mean_excess = np.mean(excess, axis=1)
+    max_excess = np.max(excess, axis=1)
+    amp_std = np.std(amp, axis=1)
+    amp_p95 = np.percentile(amp, 95, axis=1)
+    amp_p99 = np.percentile(amp, 99, axis=1)
+
+    global_features = np.stack(
+        [
+            np.log1p(par),
+            peak_ratio,
+            mean_excess,
+            max_excess,
+            amp_std,
+            amp_p95,
+            amp_p99,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+
+    if not np.isfinite(seq_features).all():
+        raise ValueError("Amplitude peak sequence features contain NaN or infinite values.")
+    if not np.isfinite(global_features).all():
+        raise ValueError("Amplitude peak global features contain NaN or infinite values.")
+
+    return seq_features, global_features
+
+
 def extract_phase_sincos(X_raw: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     """
     Backward-compatible instantaneous phase unit-vector helper.
@@ -180,4 +326,3 @@ def prepare_physical_features(X_raw: np.ndarray) -> tuple[np.ndarray, np.ndarray
         extract_amplitude_features(X_raw),
         extract_differential_phase_sincos(X_raw),
     )
-

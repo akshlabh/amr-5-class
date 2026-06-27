@@ -49,7 +49,8 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     input1 : (batch, 2, 128, 1)  raw IQ frame
     input2 : (batch, 128, 1)     I channel
     input3 : (batch, 128, 1)     Q channel
-    input4 : (batch, 128, 4)     [A, A^2, delta_A, abs(delta_A)]
+    input4 : (batch, 128, 8)     amplitude + QAM16-boundary peak channels
+    input5 : (batch, 7)          PAR / peak-count global amplitude statistics
     """
     dr = dropout_rate
     l2_cnn = keras.regularizers.L2(1e-4)
@@ -58,7 +59,8 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     input1 = Input(shape=(2, 128, 1), name='input1')
     input2 = Input(shape=(128, 1), name='input2')
     input3 = Input(shape=(128, 1), name='input3')
-    input4 = Input(shape=(128, 4), name='input4_amplitude_features')
+    input4 = Input(shape=(128, 8), name='input4_amplitude_peak_sequence')
+    input5 = Input(shape=(7,), name='input5_amplitude_peak_global')
 
     # ------------------------------------------------------------------
     # Original MCLDNN CNN block, same topology and layer names as attention.
@@ -117,18 +119,30 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     # Amplitude-only physical branch.
     # ------------------------------------------------------------------
     amp_seq = Conv1D(32, 5, padding='valid', activation='relu',
-                     name='amp_feat_conv1',
+                     name='amp_peak_conv1',
                      kernel_regularizer=l2_cnn)(input4)   # (batch, 124, 32)
     amp_seq = Conv1D(32, 3, padding='same', activation='relu',
-                     name='amp_feat_conv2',
+                     name='amp_peak_conv2',
                      kernel_regularizer=l2_cnn)(amp_seq)  # (batch, 124, 32)
-    amp_seq = Dropout(attn_dropout, name='amp_feat_drop')(amp_seq)
+    amp_seq = Dropout(attn_dropout, name='amp_peak_drop')(amp_seq)
 
     amp_mean = ops.mean(amp_seq, axis=1)
     amp_max = ops.max(amp_seq, axis=1)
-    amp_context = amp_mean + amp_max                       # (batch, 32)
+    amp_seq_context = amp_mean + amp_max                   # (batch, 32)
+
+    amp_global = Dense(32, activation='relu',
+                       name='amp_global_dense1',
+                       kernel_regularizer=l2_cnn)(input5)
+    amp_global = Dropout(attn_dropout, name='amp_global_drop')(amp_global)
+    amp_global = Dense(32, activation='relu',
+                       name='amp_global_dense2',
+                       kernel_regularizer=l2_cnn)(amp_global)
+
+    amp_context = concatenate([amp_seq_context, amp_global],
+                              axis=-1,
+                              name='amp_peak_context_concat')
     amp_context = Dense(100, activation='relu',
-                        name='amp_context_proj',
+                        name='amp_peak_context_proj',
                         kernel_regularizer=l2_cnn)(amp_context)
 
     # Gated late fusion. Starts conservative and learns to open the amplitude
@@ -150,7 +164,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
     out = Dropout(dr, name='drop2')(out)
     softmax_out = Dense(classes, activation='softmax', name='softmax')(out)
 
-    return [input1, input2, input3, input4], softmax_out, attn_weights
+    return [input1, input2, input3, input4, input5], softmax_out, attn_weights
 
 
 def build_mcldnn_attention_amp(classes: int = 5,
@@ -203,18 +217,18 @@ if __name__ == '__main__':
     dummy1 = np.zeros((4, 2, 128, 1), dtype='float32')
     dummy2 = np.zeros((4, 128, 1), dtype='float32')
     dummy3 = np.zeros((4, 128, 1), dtype='float32')
-    dummy4 = np.zeros((4, 128, 4), dtype='float32')
+    dummy4 = np.zeros((4, 128, 8), dtype='float32')
+    dummy5 = np.zeros((4, 7), dtype='float32')
 
-    y = model.predict([dummy1, dummy2, dummy3, dummy4], verbose=0)
+    y = model.predict([dummy1, dummy2, dummy3, dummy4, dummy5], verbose=0)
     print(f"Training model output shape: {y.shape}")
     assert y.shape == (4, 5)
 
     extractor = build_mcldnn_attention_amp_extractor(classes=5)
-    y2, attn = extractor.predict([dummy1, dummy2, dummy3, dummy4],
+    y2, attn = extractor.predict([dummy1, dummy2, dummy3, dummy4, dummy5],
                                  verbose=0)
     print(f"Extractor softmax shape: {y2.shape}")
     print(f"Extractor attention shape: {attn.shape}")
     assert y2.shape == (4, 5)
     assert attn.shape == (4, 4, 124, 124)
     print("All shape checks PASSED")
-

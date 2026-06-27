@@ -104,6 +104,9 @@ def main():
     snr_weighted     = tr_cfg.get('snr_weighted', False)  # SNR-proportional sample weights
     initial_lr       = tr_cfg.get('initial_lr', 1e-3)    # default 1e-3 (Adam, original paper)
     class_weights_cfg= tr_cfg.get('class_weights', None) # class-specific penalty weights
+    amp_boundary_quantile = float(
+        tr_cfg.get('amp_boundary_quantile', cfg.get('amp_boundary_quantile', 95.0))
+    )
 
     # Transfer-learning config (4-class only)
     transfer_from           = cfg.get('transfer_from', None)
@@ -162,6 +165,22 @@ def main():
         shuffle_split=shuffle_split)
 
     # ── Prepare inputs (branch-aware) ─────────────────────────────────────────
+    qam16_amp_boundary = None
+    if model_type == 'mcldnn_attention_amp':
+        from src.features.signal_features import estimate_qam16_amplitude_boundary
+        qam16_amp_boundary = estimate_qam16_amplitude_boundary(
+            X_train,
+            Y_train,
+            selected_classes,
+            quantile=amp_boundary_quantile,
+        )
+        print(f"[train] QAM16 amplitude boundary: "
+              f"T={qam16_amp_boundary:.6f} "
+              f"(train-only {amp_boundary_quantile:.1f}th percentile)")
+        with open(os.path.join(res_dir, 'qam16_amplitude_boundary.txt'), 'w') as f:
+            f.write(f"{qam16_amp_boundary:.10f}\n")
+            f.write(f"quantile={amp_boundary_quantile:.4f}\n")
+
     def prepare_inputs(X):
         """
         Return the model input list/array for the selected branch/model.
@@ -178,13 +197,17 @@ def main():
                 [IQ_4D, I_1D, Q_1D, amplitude features]
         """
         if model_type == 'mcldnn_attention_amp':
-            from src.features.signal_features import extract_amplitude_features
-            X_amp = extract_amplitude_features(X)
+            from src.features.signal_features import extract_amplitude_peak_features
+            X_amp_seq, X_amp_global = extract_amplitude_peak_features(
+                X,
+                qam16_boundary=qam16_amp_boundary,
+            )
             return [
                 np.expand_dims(X, axis=3),           # (N, 2, 128, 1) — IQ 2D
                 np.expand_dims(X[:, 0, :], axis=2),  # (N, 128, 1)    — I channel
                 np.expand_dims(X[:, 1, :], axis=2),  # (N, 128, 1)    — Q channel
-                X_amp,                               # (N, 128, 4)    — A/A²/dA/|dA|
+                X_amp_seq,                           # (N, 128, 8)    peak sequence
+                X_amp_global,                        # (N, 7)         PAR/peak stats
             ]
         if model_type == 'mcldnn_attention_phys':
             from src.features.signal_features import prepare_physical_features
@@ -226,7 +249,8 @@ def main():
     if model_type == 'mcldnn_attention_amp':
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "
-              f"Q={inp_train[2].shape}  AmpFeat={inp_train[3].shape}")
+              f"Q={inp_train[2].shape}  AmpSeq={inp_train[3].shape}  "
+              f"AmpGlobal={inp_train[4].shape}")
     elif model_type == 'mcldnn_attention_phys':
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "

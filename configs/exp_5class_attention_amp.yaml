@@ -11,11 +11,20 @@
 #
 #   Main goal: minimize QAM16 <-> QAM64 confusion.
 #
-# This model removes phase features completely and keeps only amplitude-based
-# physical features:
+# This model removes phase features completely and keeps amplitude/peak-based
+# physical features for the current target: QAM16 vs QAM64.
 #
-#   input4_amplitude_features:
-#       [A(t), A(t)^2, delta_A(t), abs(delta_A(t))]
+#   input4_amplitude_peak_sequence:
+#       [A(t), A(t)^2, delta_A(t), abs(delta_A(t)),
+#        exceed_qam16_boundary(t), excess(t),
+#        relative_excess(t), relative_excess(t)^2]
+#
+#   input5_amplitude_peak_global:
+#       [log1p(PAR), peak_ratio, mean_excess, max_excess,
+#        amplitude_std, amplitude_p95, amplitude_p99]
+#
+# The QAM16 amplitude boundary is estimated from the training split only,
+# preventing validation/test leakage.
 #
 # Fusion design:
 #   Raw IQ goes through the normal CNN + self-attention path. The amplitude
@@ -52,6 +61,7 @@ training:
   epochs: 10000
   batch_size: 400
   dropout_rate: 0.6
+  amp_boundary_quantile: 95.0
   early_stopping_patience: 10
   reduce_lr_patience: 5
   reduce_lr_factor: 0.5
@@ -64,4 +74,3 @@ output:
   log_dir:         "experiments/5class_attention_amp/logs"
   figure_dir:      "experiments/5class_attention_amp/figures"
   result_dir:      "experiments/5class_attention_amp/results"
-
