@@ -16,15 +16,20 @@
 #
 #   input4_amplitude_peak_sequence:
 #       [A(t), A(t)^2, delta_A(t), abs(delta_A(t)),
-#        exceed_qam16_boundary(t), excess(t),
-#        relative_excess(t), relative_excess(t)^2]
+#        exceed_q95(t), exceed_q98(t), exceed_q99(t),
+#        relative_excess_q98(t), relative_excess_q99(t),
+#        local_density_q98(t), power_ratio(t), peak_score(t)]
 #
 #   input5_amplitude_peak_global:
-#       [log1p(PAR), peak_ratio, mean_excess, max_excess,
-#        amplitude_std, amplitude_p95, amplitude_p99]
+#       [log1p(PAR), log1p(robust_PAR),
+#        peak_ratio_q95, peak_ratio_q98, peak_ratio_q99,
+#        sustained_ratio_q98, mean_relative_excess_q98,
+#        mean_relative_excess_q99, max_relative_excess_q98,
+#        amplitude_std, amplitude_p95, amplitude_p99, tail_separation]
 #
-# The QAM16 amplitude boundary is estimated from the training split only,
-# preventing validation/test leakage.
+# The QAM16 amplitude boundaries are estimated from the training split only,
+# preventing validation/test leakage.  Multiple boundaries reduce false QAM64
+# alarms caused by rare/noisy QAM16 peaks.
 #
 # Fusion design:
 #   Raw IQ goes through the normal CNN + self-attention path. The amplitude
@@ -61,7 +66,7 @@ training:
   epochs: 10000
   batch_size: 400
   dropout_rate: 0.6
-  amp_boundary_quantile: 95.0
+  amp_boundary_quantiles: [95.0, 98.0, 99.0]
   early_stopping_patience: 10
   reduce_lr_patience: 5
   reduce_lr_factor: 0.5
