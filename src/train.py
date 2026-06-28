@@ -166,7 +166,7 @@ def main():
 
     # ── Prepare inputs (branch-aware) ─────────────────────────────────────────
     qam16_amp_boundary = None
-    if model_type == 'mcldnn_attention_amp':
+    if model_type in ('mcldnn_attention_amp', 'mcldnn_attention_amp_lite'):
         from src.features.signal_features import estimate_qam16_amplitude_boundary
         qam16_amp_boundary = estimate_qam16_amplitude_boundary(
             X_train,
@@ -203,10 +203,23 @@ def main():
                 qam16_boundary=qam16_amp_boundary,
             )
             return [
+                np.expand_dims(X, axis=3),           # (N, 2, 128, 1) â€” IQ 2D
+                np.expand_dims(X[:, 0, :], axis=2),  # (N, 128, 1)    â€” I channel
+                np.expand_dims(X[:, 1, :], axis=2),  # (N, 128, 1)    â€” Q channel
+                X_amp_seq,                           # (N, 128, 8)    peak sequence
+                X_amp_global,                        # (N, 7)         PAR/peak stats
+            ]
+        if model_type == 'mcldnn_attention_amp_lite':
+            from src.features.signal_features import extract_amplitude_peak_lite_features
+            X_amp_seq, X_amp_global = extract_amplitude_peak_lite_features(
+                X,
+                qam16_boundary=qam16_amp_boundary,
+            )
+            return [
                 np.expand_dims(X, axis=3),           # (N, 2, 128, 1) — IQ 2D
                 np.expand_dims(X[:, 0, :], axis=2),  # (N, 128, 1)    — I channel
                 np.expand_dims(X[:, 1, :], axis=2),  # (N, 128, 1)    — Q channel
-                X_amp_seq,                           # (N, 128, 8)    peak sequence
+                X_amp_seq,                           # (N, 128, 7)    lite peak sequence
                 X_amp_global,                        # (N, 7)         PAR/peak stats
             ]
         if model_type == 'mcldnn_attention_phys':
@@ -240,13 +253,14 @@ def main():
     # 1-element list.  Unwrap here so model.fit / evaluate / predict don't emit:
     #   "The structure of `inputs` doesn't match the expected structure."
     if branch != 'full' and model_type not in ('mcldnn_attention_phys',
-                                               'mcldnn_attention_amp'):
+                                               'mcldnn_attention_amp',
+                                               'mcldnn_attention_amp_lite'):
         inp_train = inp_train[0]   # (N, 128, 1)  or  (N, 2, 128, 1)
         inp_val   = inp_val[0]
         inp_test  = inp_test[0]
 
     # Print input shapes (handle single-input variants gracefully)
-    if model_type == 'mcldnn_attention_amp':
+    if model_type in ('mcldnn_attention_amp', 'mcldnn_attention_amp_lite'):
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "
               f"Q={inp_train[2].shape}  AmpSeq={inp_train[3].shape}  "
@@ -266,7 +280,8 @@ def main():
     resume_weights = args.resume
     is_attention   = model_type in ('mcldnn_attention',
                                     'mcldnn_attention_phys',
-                                    'mcldnn_attention_amp')
+                                    'mcldnn_attention_amp',
+                                    'mcldnn_attention_amp_lite')
 
     if model_type == 'mcldnn_attention':
         from src.models.mcldnn_attention import build_mcldnn_attention
@@ -287,6 +302,13 @@ def main():
         model = build_mcldnn_attention_amp(classes=n_classes,
                                            dropout_rate=dropout_rate,
                                            learning_rate=initial_lr)
+        if resume_weights:
+            model.load_weights(resume_weights)
+    elif model_type == 'mcldnn_attention_amp_lite':
+        from src.models.mcldnn_attention_amp_lite import build_mcldnn_attention_amp_lite
+        model = build_mcldnn_attention_amp_lite(classes=n_classes,
+                                                dropout_rate=dropout_rate,
+                                                learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
     elif model_type == 'lstm64':

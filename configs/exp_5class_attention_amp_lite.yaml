@@ -1,0 +1,76 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN-Attention with lite amplitude/PAR features
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Model   : mcldnn_attention_amp_lite
+# Loss    : Standard categorical cross-entropy with label smoothing
+#
+# Purpose
+# -------
+# Professor-directed ablation after the amplitude+phase experiment:
+#
+#   Main goal: minimize QAM16 <-> QAM64 confusion.
+#
+# This separate ablation removes phase features and also removes signed
+# delta_A(t). It keeps only cleaner QAM16/QAM64 amplitude evidence.
+#
+#   input4_amplitude_peak_sequence:
+#       [A(t), A(t)^2, abs(delta_A(t)),
+#        exceed_qam16_boundary(t), excess(t),
+#        relative_excess(t), relative_excess(t)^2]
+#
+#   input5_amplitude_peak_global:
+#       [log1p(PAR), peak_ratio, mean_excess, max_excess,
+#        amplitude_std, amplitude_p95, amplitude_p99]
+#
+# The QAM16 amplitude boundary is estimated from the training split only,
+# preventing validation/test leakage.
+#
+# Fusion design:
+#   Raw IQ goes through the normal CNN + self-attention path. The amplitude
+#   branch is separate and is fused after attention pooling using:
+#
+#       final_context = main_context + gate * amplitude_context
+#
+# Fair-comparison split:
+#   Uses the same seed/classes and shuffle_split=false setup as the current
+#   attention experiments, giving the same deterministic 60/20/20 split.
+# =============================================================================
+
+experiment:
+  name: "5class_attention_amp_lite"
+  description: "MCLDNN attention with lite amplitude/PAR features for QAM16/QAM64 confusion reduction"
+  track: "attention_amp_lite"
+  seed: 2016
+  model: "mcldnn_attention_amp_lite"
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+# Same deterministic 60/20/20 per-(mod,SNR) split style used by the comparable
+# full-SNR attention runs.
+shuffle_split: false
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.6
+  amp_boundary_quantile: 95.0
+  early_stopping_patience: 10
+  reduce_lr_patience: 5
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.0005
+
+output:
+  base_dir:        "experiments/5class_attention_amp_lite"
+  checkpoint_path: "experiments/5class_attention_amp_lite/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_attention_amp_lite/logs"
+  figure_dir:      "experiments/5class_attention_amp_lite/figures"
+  result_dir:      "experiments/5class_attention_amp_lite/results"

@@ -246,6 +246,93 @@ def extract_amplitude_peak_features(X_raw: np.ndarray,
     return seq_features, global_features
 
 
+def extract_amplitude_peak_lite_features(X_raw: np.ndarray,
+                                         qam16_boundary: float,
+                                         eps: float = 1e-8
+                                         ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute the cleaner single-boundary PAR feature set.
+
+    This variant intentionally drops signed delta_A(t).  For QAM16/QAM64, the
+    direction of local amplitude change is less physically meaningful than the
+    radius level, power, amount of variation, and boundary-crossing evidence.
+
+    Per-time-step channels, shape (N, T, 7)
+    --------------------------------------
+    0. A(t)                 : mean-normalized amplitude
+    1. A(t)^2               : normalized instantaneous power
+    2. |delta_A(t)|         : local amplitude variation magnitude
+    3. exceed_T(t)          : 1 if A(t) > T_qam16 else 0
+    4. excess_T(t)          : max(A(t) - T_qam16, 0)
+    5. relative_excess_T(t) : excess_T(t) / T_qam16
+    6. excess_power_T(t)    : relative_excess_T(t)^2
+
+    Global channels, shape (N, 7)
+    ----------------------------
+    0. log1p(PAR)
+    1. peak_ratio
+    2. mean_excess
+    3. max_excess
+    4. amplitude_std
+    5. amplitude_p95
+    6. amplitude_p99
+    """
+    T = float(qam16_boundary)
+    if not np.isfinite(T) or T <= 0:
+        raise ValueError(f"qam16_boundary must be a positive finite scalar; got {T!r}.")
+
+    amp = _normalized_amplitude(X_raw, eps=eps)
+    power = amp ** 2
+    delta_amp = np.diff(amp, axis=1, prepend=amp[:, :1])
+    abs_delta_amp = np.abs(delta_amp)
+
+    exceed = (amp > T).astype(np.float32)
+    excess = np.maximum(amp - T, 0.0).astype(np.float32)
+    rel_excess = excess / (T + eps)
+    excess_power = rel_excess ** 2
+
+    seq_features = np.stack(
+        [
+            amp,
+            power,
+            abs_delta_amp,
+            exceed,
+            excess,
+            rel_excess,
+            excess_power,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+
+    par = np.max(power, axis=1) / (np.mean(power, axis=1) + eps)
+    peak_ratio = np.mean(exceed, axis=1)
+    mean_excess = np.mean(excess, axis=1)
+    max_excess = np.max(excess, axis=1)
+    amp_std = np.std(amp, axis=1)
+    amp_p95 = np.percentile(amp, 95, axis=1)
+    amp_p99 = np.percentile(amp, 99, axis=1)
+
+    global_features = np.stack(
+        [
+            np.log1p(par),
+            peak_ratio,
+            mean_excess,
+            max_excess,
+            amp_std,
+            amp_p95,
+            amp_p99,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+
+    if not np.isfinite(seq_features).all():
+        raise ValueError("Amplitude peak-lite sequence features contain NaN or infinite values.")
+    if not np.isfinite(global_features).all():
+        raise ValueError("Amplitude peak-lite global features contain NaN or infinite values.")
+
+    return seq_features, global_features
+
+
 def extract_phase_sincos(X_raw: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     """
     Backward-compatible instantaneous phase unit-vector helper.
