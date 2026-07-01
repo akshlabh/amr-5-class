@@ -1,0 +1,4 @@
+model,label,test_loss,test_accuracy,mean_snr_accuracy,peak_snr_accuracy,peak_snr_db
+normal_attention,Normal attention,1.156070590019226,0.6123499870300293,0.61235,0.927,12
+plain_diffattention,Plain differential attention,0.9339516758918762,0.5612999796867371,0.5613,0.793,10
+diffattention_amp_focus,Diff attention + amplitude/PAR focus,1.2506500482559204,0.5920500159263611,0.5920500000000001,0.845,10
