@@ -8,18 +8,19 @@
 # Purpose
 # -------
 # Tuned after the first diff-attention result showed QAM64 collapse into QAM16.
-# Class weights are intentionally not used.
+# This version uses class weighting to force the model to learn the hard QAM
+# boundary instead of solving four classes and ignoring QAM64.
 #
 # Main changes:
 #   - model uses gated differential cancellation, initialized close to normal attention
-#   - standard cross-entropy is used by the model by default
+#   - class-weighted cross-entropy is used during model.fit()
 #   - dropout is reduced to help fit high-SNR QAM64 structure
 #   - patience is increased so the hard QAM boundary has time to learn
 # =============================================================================
 
 experiment:
   name: "5class_diffattention"
-  description: "MCLDNN with gated differential self-attention, no class weights"
+  description: "MCLDNN with gated differential self-attention and QAM-focused class weights"
   track: "attention"
   seed: 2016
   model: "mcldnn_diffattention"
@@ -45,6 +46,12 @@ training:
   reduce_lr_factor: 0.5
   min_lr: 1.0e-7
   initial_lr: 0.0005
+  class_weights:
+    "BPSK":  1.0
+    "QPSK":  1.0
+    "8PSK":  1.0
+    "QAM16": 2.0
+    "QAM64": 2.0
 
 output:
   base_dir:        "experiments/5class_diffattention"
