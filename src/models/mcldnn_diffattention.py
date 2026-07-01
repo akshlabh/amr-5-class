@@ -21,15 +21,18 @@ Normal self-attention computes:
 
     softmax(Q K^T / sqrt(d)) V
 
-Differential attention computes two independent attention maps and subtracts
-one from the other:
+    Differential attention computes two independent attention maps and subtracts
+    one from the other:
 
     (softmax(Q1 K1^T / sqrt(d)) - lambda * softmax(Q2 K2^T / sqrt(d))) V
 
-The subtraction is intended to cancel common/generic attention noise and leave
-a sharper signed attention map.  The returned extractor attention tensor is
-therefore signed; it is not a probability distribution like ordinary softmax
-attention.
+    The subtraction is intended to cancel common/generic attention noise and leave
+    a sharper signed attention map.
+
+    For this small 124-step AMR model, the cancellation is gated and initialized
+    gently.  This avoids the QAM64 collapse observed when subtraction is too
+    aggressive from the beginning of training.  The layer starts close to normal
+    attention and learns how much cancellation is useful.
 """
 
 from __future__ import annotations
@@ -111,6 +114,7 @@ class DifferentialAttention(Layer):
         head_dim: int,
         depth: int = 1,
         dropout: float = 0.0,
+        cancel_gate_init: float = 0.05,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -118,6 +122,7 @@ class DifferentialAttention(Layer):
         self.head_dim = int(head_dim)
         self.depth = int(depth)
         self.dropout_rate = float(dropout)
+        self.cancel_gate_init = float(cancel_gate_init)
         self.lambda_init = float(_lambda_init_fn(self.depth))
 
     def build(self, input_shape):
@@ -145,6 +150,18 @@ class DifferentialAttention(Layer):
         )
         self.lambda_k2 = self.add_weight(
             name="lambda_k2", shape=(d,), initializer=lam_init, trainable=True
+        )
+
+        # Learnable cancellation gate.  Initializing this small makes the layer
+        # start close to normal attention:
+        #     attn ~= attn1 - 0.05 * lambda * attn2
+        # The model can increase the gate if differential cancellation helps.
+        gate_init = np.log(self.cancel_gate_init / (1.0 - self.cancel_gate_init))
+        self.cancel_gate_logit = self.add_weight(
+            name="cancel_gate_logit",
+            shape=(),
+            initializer=keras.initializers.Constant(gate_init),
+            trainable=True,
         )
 
         self.sub_norm = RMSNorm(epsilon=1e-5, name="sub_rmsnorm")
@@ -188,12 +205,18 @@ class DifferentialAttention(Layer):
             + self.lambda_init
         )
 
-        diff_attn = attn1 - lambda_val * attn2
+        cancel_gate = ops.sigmoid(self.cancel_gate_logit)
+        lambda_eff = cancel_gate * lambda_val
+
+        diff_attn = attn1 - lambda_eff * attn2
         diff_attn = self.attn_dropout(diff_attn, training=training)
 
         out = ops.matmul(diff_attn, v)          # (batch, heads, seq, 2*dim)
         out = self.sub_norm(out)
-        out = out * (1.0 - self.lambda_init)
+
+        # Stabilize variance according to the effective initial cancellation,
+        # not the full paper lambda.  With a small gate, this remains close to 1.
+        out = out * (1.0 - self.cancel_gate_init * self.lambda_init)
 
         out = ops.transpose(out, (0, 2, 1, 3))  # (batch, seq, heads, 2*dim)
         out = ops.reshape(out, (batch, seq_len, h * 2 * d))
@@ -211,6 +234,7 @@ class DifferentialAttention(Layer):
                 "head_dim": self.head_dim,
                 "depth": self.depth,
                 "dropout": self.dropout_rate,
+                "cancel_gate_init": self.cancel_gate_init,
             }
         )
         return config
@@ -299,6 +323,7 @@ def _build_graph(classes: int, dropout_rate: float, attn_dropout: float = 0.1):
         head_dim=25,
         depth=1,
         dropout=attn_dropout,
+        cancel_gate_init=0.05,
         name="diff_mha",
     )
     attn_out, attn_weights = diff_mha(x, return_attention_scores=True)
@@ -347,12 +372,13 @@ def build_mcldnn_diffattention(
     classes: int = 5,
     dropout_rate: float = 0.6,
     learning_rate: float = 1e-3,
+    label_smoothing: float = 0.0,
 ) -> Model:
     """Build and compile the single-output training model."""
     inputs, softmax_out, _ = _build_graph(classes, dropout_rate)
     model = Model(inputs=inputs, outputs=softmax_out, name="MCLDNN_DiffAttention")
     model.compile(
-        loss=keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+        loss=keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing),
         metrics=["accuracy"],
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0),
     )
