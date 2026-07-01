@@ -416,6 +416,70 @@ def extract_amplitude_static_peak_features(X_raw: np.ndarray,
     return seq_features, global_features
 
 
+def extract_amplitude_focus_features(X_raw: np.ndarray,
+                                     qam16_boundary: float,
+                                     eps: float = 1e-8
+                                     ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute the focused amplitude/PAR feature set for QAM16/QAM64 separation.
+
+    This is the most compact professor-facing QAM physical branch.  It avoids
+    adjacent-sample transition features because those can be dominated by noise
+    at low SNR, and keeps only direct radius/outer-boundary evidence.
+
+    Per-time-step channels, shape (N, T, 4)
+    --------------------------------------
+    0. A(t)                 : mean-normalized amplitude / radius
+    1. A(t)^2               : normalized instantaneous power
+    2. exceed_T(t)          : 1 if A(t) > T_qam16 else 0
+    3. excess_T(t)          : max(A(t) - T_qam16, 0)
+
+    Global channels, shape (N, 2)
+    ----------------------------
+    0. log1p(PAR)           : log(1 + max(power) / mean(power))
+    1. amplitude_p95        : 95th percentile of A(t)
+
+    The QAM16 boundary T_qam16 must be estimated from the training split only
+    by estimate_qam16_amplitude_boundary() to avoid validation/test leakage.
+    """
+    T = float(qam16_boundary)
+    if not np.isfinite(T) or T <= 0:
+        raise ValueError(f"qam16_boundary must be a positive finite scalar; got {T!r}.")
+
+    amp = _normalized_amplitude(X_raw, eps=eps)
+    power = amp ** 2
+    exceed = (amp > T).astype(np.float32)
+    excess = np.maximum(amp - T, 0.0).astype(np.float32)
+
+    seq_features = np.stack(
+        [
+            amp,
+            power,
+            exceed,
+            excess,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+
+    par = np.max(power, axis=1) / (np.mean(power, axis=1) + eps)
+    amp_p95 = np.percentile(amp, 95, axis=1)
+
+    global_features = np.stack(
+        [
+            np.log1p(par),
+            amp_p95,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+
+    if not np.isfinite(seq_features).all():
+        raise ValueError("Focused amplitude sequence features contain NaN or infinite values.")
+    if not np.isfinite(global_features).all():
+        raise ValueError("Focused amplitude global features contain NaN or infinite values.")
+
+    return seq_features, global_features
+
+
 def extract_phase_sincos(X_raw: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     """
     Backward-compatible instantaneous phase unit-vector helper.

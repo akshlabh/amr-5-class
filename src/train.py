@@ -168,7 +168,8 @@ def main():
     qam16_amp_boundary = None
     if model_type in ('mcldnn_attention_amp',
                       'mcldnn_attention_amp_lite',
-                      'mcldnn_attention_amp_static'):
+                      'mcldnn_attention_amp_static',
+                      'mcldnn_diffattention_amp_focus'):
         from src.features.signal_features import estimate_qam16_amplitude_boundary
         qam16_amp_boundary = estimate_qam16_amplitude_boundary(
             X_train,
@@ -197,7 +198,22 @@ def main():
                 [IQ_4D, I_1D, Q_1D, amplitude features, dphase features]
         'mcldnn_attention_amp':
                 [IQ_4D, I_1D, Q_1D, amplitude peak sequence, PAR/peak globals]
+        'mcldnn_diffattention_amp_focus':
+                [IQ_4D, I_1D, Q_1D, focused amplitude sequence, PAR/p95 globals]
         """
+        if model_type == 'mcldnn_diffattention_amp_focus':
+            from src.features.signal_features import extract_amplitude_focus_features
+            X_amp_seq, X_amp_global = extract_amplitude_focus_features(
+                X,
+                qam16_boundary=qam16_amp_boundary,
+            )
+            return [
+                np.expand_dims(X, axis=3),           # (N, 2, 128, 1) — IQ 2D
+                np.expand_dims(X[:, 0, :], axis=2),  # (N, 128, 1)    — I channel
+                np.expand_dims(X[:, 1, :], axis=2),  # (N, 128, 1)    — Q channel
+                X_amp_seq,                           # (N, 128, 4)    focused amp seq
+                X_amp_global,                        # (N, 2)         PAR/p95 stats
+            ]
         if model_type == 'mcldnn_attention_amp':
             from src.features.signal_features import extract_amplitude_peak_features
             X_amp_seq, X_amp_global = extract_amplitude_peak_features(
@@ -270,7 +286,8 @@ def main():
     if branch != 'full' and model_type not in ('mcldnn_attention_phys',
                                                'mcldnn_attention_amp',
                                                'mcldnn_attention_amp_lite',
-                                               'mcldnn_attention_amp_static'):
+                                               'mcldnn_attention_amp_static',
+                                               'mcldnn_diffattention_amp_focus'):
         inp_train = inp_train[0]   # (N, 128, 1)  or  (N, 2, 128, 1)
         inp_val   = inp_val[0]
         inp_test  = inp_test[0]
@@ -278,7 +295,8 @@ def main():
     # Print input shapes (handle single-input variants gracefully)
     if model_type in ('mcldnn_attention_amp',
                       'mcldnn_attention_amp_lite',
-                      'mcldnn_attention_amp_static'):
+                      'mcldnn_attention_amp_static',
+                      'mcldnn_diffattention_amp_focus'):
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "
               f"Q={inp_train[2].shape}  AmpSeq={inp_train[3].shape}  "
@@ -301,7 +319,8 @@ def main():
                                     'mcldnn_attention_phys',
                                     'mcldnn_attention_amp',
                                     'mcldnn_attention_amp_lite',
-                                    'mcldnn_attention_amp_static')
+                                    'mcldnn_attention_amp_static',
+                                    'mcldnn_diffattention_amp_focus')
 
     if model_type == 'mcldnn_attention':
         from src.models.mcldnn_attention import build_mcldnn_attention
@@ -315,6 +334,13 @@ def main():
         model = build_mcldnn_diffattention(classes=n_classes,
                                            dropout_rate=dropout_rate,
                                            learning_rate=initial_lr)
+        if resume_weights:
+            model.load_weights(resume_weights)
+    elif model_type == 'mcldnn_diffattention_amp_focus':
+        from src.models.mcldnn_diffattention_amp_focus import build_mcldnn_diffattention_amp_focus
+        model = build_mcldnn_diffattention_amp_focus(classes=n_classes,
+                                                     dropout_rate=dropout_rate,
+                                                     learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
     elif model_type == 'mcldnn_attention_phys':

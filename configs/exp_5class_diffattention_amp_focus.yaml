@@ -1,0 +1,68 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN Differential-Attention + focused amplitude/PAR cues
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Model   : mcldnn_diffattention_amp_focus
+# Loss    : Standard categorical cross-entropy, no class weighting
+#
+# Purpose
+# -------
+# Last targeted experiment for the observed QAM64 -> QAM16 collapse in the
+# plain differential-attention model.
+#
+# The hypothesis is physical:
+#   QAM16 vs QAM64 confusion is not only an attention-noise problem.  QAM64
+#   should show stronger high-amplitude / outer-region evidence than QAM16.
+#
+# This model keeps the differential-attention backbone, but adds only the
+# requested amplitude/PAR features:
+#
+#   input4_amplitude_focus_sequence:
+#       [A(t), A(t)^2, boundary_crossing(t), excess_amplitude(t)]
+#
+#   input5_par_p95_global:
+#       [log1p(PAR), amplitude_p95]
+#
+# No phase features are used.  No delta_A(t) or |delta_A(t)| features are used.
+# The QAM16 boundary is estimated from the training split only to avoid leakage.
+#
+# Fair-comparison split:
+#   Uses the same seed/classes and shuffle_split=false setup as the current
+#   attention experiments, giving the same deterministic 60/20/20 split.
+# =============================================================================
+
+experiment:
+  name: "5class_diffattention_amp_focus"
+  description: "Differential attention with focused amplitude boundary, excess, PAR, and p95 features"
+  track: "diffattention_amp_focus"
+  seed: 2016
+  model: "mcldnn_diffattention_amp_focus"
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+shuffle_split: false
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.55
+  amp_boundary_quantile: 95.0
+  early_stopping_patience: 15
+  reduce_lr_patience: 6
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.0005
+
+output:
+  base_dir:        "experiments/5class_diffattention_amp_focus"
+  checkpoint_path: "experiments/5class_diffattention_amp_focus/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_diffattention_amp_focus/logs"
+  figure_dir:      "experiments/5class_diffattention_amp_focus/figures"
+  result_dir:      "experiments/5class_diffattention_amp_focus/results"
