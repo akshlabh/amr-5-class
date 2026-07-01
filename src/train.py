@@ -297,6 +297,7 @@ def main():
     # ── Build model ────────────────────────────────────────────────────────────
     resume_weights = args.resume
     is_attention   = model_type in ('mcldnn_attention',
+                                    'mcldnn_diffattention',
                                     'mcldnn_attention_phys',
                                     'mcldnn_attention_amp',
                                     'mcldnn_attention_amp_lite',
@@ -307,6 +308,13 @@ def main():
         model = build_mcldnn_attention(classes=n_classes,
                                        dropout_rate=dropout_rate,
                                        learning_rate=initial_lr)
+        if resume_weights:
+            model.load_weights(resume_weights)
+    elif model_type == 'mcldnn_diffattention':
+        from src.models.mcldnn_diffattention import build_mcldnn_diffattention
+        model = build_mcldnn_diffattention(classes=n_classes,
+                                           dropout_rate=dropout_rate,
+                                           learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
     elif model_type == 'mcldnn_attention_phys':
