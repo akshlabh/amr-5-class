@@ -1,0 +1,59 @@
+# =============================================================================
+# Experiment: 5-class normal attention using 4-channel physical sequence input
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Model   : mcldnn_attention_iq_amp_phase
+# Loss    : Standard categorical cross-entropy, no class weighting
+#
+# Input channels:
+#   0. I(t)
+#   1. Q(t)
+#   2. A(t)       = mean-normalized amplitude
+#   3. phase(t)   = atan2(Q, I) / pi
+#
+# Purpose
+# -------
+# A clean normal-attention experiment where amplitude and phase are not added
+# as a late side branch, but are provided directly as extra channels beside I/Q.
+#
+# This is not differential attention and does not use class weights.
+#
+# Fair comparison:
+#   Uses the same seed/classes and shuffle_split=false setup as the existing
+#   normal-attention experiment.
+# =============================================================================
+
+experiment:
+  name: "5class_attention_iq_amp_phase"
+  description: "Normal self-attention on four channels: I, Q, amplitude, phase"
+  track: "attention_iq_amp_phase"
+  seed: 2016
+  model: "mcldnn_attention_iq_amp_phase"
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+shuffle_split: false
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.55
+  early_stopping_patience: 15
+  reduce_lr_patience: 6
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.0005
+
+output:
+  base_dir:        "experiments/5class_attention_iq_amp_phase"
+  checkpoint_path: "experiments/5class_attention_iq_amp_phase/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_attention_iq_amp_phase/logs"
+  figure_dir:      "experiments/5class_attention_iq_amp_phase/figures"
+  result_dir:      "experiments/5class_attention_iq_amp_phase/results"

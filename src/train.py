@@ -200,7 +200,13 @@ def main():
                 [IQ_4D, I_1D, Q_1D, amplitude peak sequence, PAR/peak globals]
         'mcldnn_diffattention_amp_focus':
                 [IQ_4D, I_1D, Q_1D, focused amplitude sequence, PAR/p95 globals]
+        'mcldnn_attention_iq_amp_phase':
+                [4-channel sequence: I, Q, A(t), phase(t)]
         """
+        if model_type == 'mcldnn_attention_iq_amp_phase':
+            from src.features.signal_features import extract_iq_amplitude_phase_channels
+            X_iqap = extract_iq_amplitude_phase_channels(X)
+            return [X_iqap]                           # (N, 128, 4)
         if model_type == 'mcldnn_diffattention_amp_focus':
             from src.features.signal_features import extract_amplitude_focus_features
             X_amp_seq, X_amp_global = extract_amplitude_focus_features(
@@ -287,7 +293,8 @@ def main():
                                                'mcldnn_attention_amp',
                                                'mcldnn_attention_amp_lite',
                                                'mcldnn_attention_amp_static',
-                                               'mcldnn_diffattention_amp_focus'):
+                                               'mcldnn_diffattention_amp_focus',
+                                               'mcldnn_attention_iq_amp_phase'):
         inp_train = inp_train[0]   # (N, 128, 1)  or  (N, 2, 128, 1)
         inp_val   = inp_val[0]
         inp_test  = inp_test[0]
@@ -301,6 +308,8 @@ def main():
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "
               f"Q={inp_train[2].shape}  AmpSeq={inp_train[3].shape}  "
               f"AmpGlobal={inp_train[4].shape}")
+    elif model_type == 'mcldnn_attention_iq_amp_phase':
+        print(f"[train] Input shapes: IQAmpPhase={inp_train[0].shape}")
     elif model_type == 'mcldnn_attention_phys':
         print(f"[train] Input shapes: "
               f"IQ={inp_train[0].shape}  I={inp_train[1].shape}  "
@@ -320,13 +329,21 @@ def main():
                                     'mcldnn_attention_amp',
                                     'mcldnn_attention_amp_lite',
                                     'mcldnn_attention_amp_static',
-                                    'mcldnn_diffattention_amp_focus')
+                                    'mcldnn_diffattention_amp_focus',
+                                    'mcldnn_attention_iq_amp_phase')
 
     if model_type == 'mcldnn_attention':
         from src.models.mcldnn_attention import build_mcldnn_attention
         model = build_mcldnn_attention(classes=n_classes,
                                        dropout_rate=dropout_rate,
                                        learning_rate=initial_lr)
+        if resume_weights:
+            model.load_weights(resume_weights)
+    elif model_type == 'mcldnn_attention_iq_amp_phase':
+        from src.models.mcldnn_attention_iq_amp_phase import build_mcldnn_attention_iq_amp_phase
+        model = build_mcldnn_attention_iq_amp_phase(classes=n_classes,
+                                                    dropout_rate=dropout_rate,
+                                                    learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
     elif model_type == 'mcldnn_diffattention':

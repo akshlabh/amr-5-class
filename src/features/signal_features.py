@@ -480,6 +480,46 @@ def extract_amplitude_focus_features(X_raw: np.ndarray,
     return seq_features, global_features
 
 
+def extract_iq_amplitude_phase_channels(X_raw: np.ndarray,
+                                        eps: float = 1e-8) -> np.ndarray:
+    """
+    Build the requested 4-channel sequence input: [I, Q, A(t), phase(t)].
+
+    Channels, shape (N, T, 4)
+    ------------------------
+    0. I(t)       : in-phase component from the normalized IQ window
+    1. Q(t)       : quadrature component from the normalized IQ window
+    2. A(t)       : per-window mean-normalized amplitude/radius
+    3. phase(t)   : atan2(Q, I) / pi, bounded to [-1, 1]
+
+    Notes
+    -----
+    The phase scalar is intentionally bounded so the neural network receives
+    a numerically stable feature.  I and Q are kept alongside phase, so even
+    when phase wraps at -pi/pi, the original circular information is still
+    available to the model through the raw IQ channels.
+    """
+    X = _validate_iq_array(X_raw)
+    I = X[:, 0, :]
+    Q = X[:, 1, :]
+    amp = _normalized_amplitude(X, eps=eps)
+    phase = (np.arctan2(Q, I) / np.pi).astype(np.float32)
+
+    features = np.stack(
+        [
+            I,
+            Q,
+            amp,
+            phase,
+        ],
+        axis=-1,
+    ).astype(np.float32)
+
+    if not np.isfinite(features).all():
+        raise ValueError("IQ-amplitude-phase features contain NaN or infinite values.")
+    return features
+
+
 def extract_phase_sincos(X_raw: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     """
     Backward-compatible instantaneous phase unit-vector helper.
