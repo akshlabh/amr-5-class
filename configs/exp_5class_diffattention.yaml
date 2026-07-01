@@ -8,10 +8,9 @@
 # Purpose
 # -------
 # This is an apples-to-apples comparison against configs/exp_5class_attention.yaml.
-# The convolutional front-end, classifier head, split policy, class weights,
-# dropout, learning rate, and callbacks are kept the same.  The only model-level
-# change is replacing ordinary softmax multi-head self-attention with
-# differential self-attention.
+# The convolutional front-end, classifier head, split policy, dropout, learning
+# rate, and callbacks are kept aligned with the normal attention experiment.
+# Class weights are intentionally not used for this diff-attention run.
 # =============================================================================
 
 experiment:
@@ -42,12 +41,6 @@ training:
   reduce_lr_factor: 0.5
   min_lr: 1.0e-7
   initial_lr: 0.0005
-  class_weights:
-    "BPSK":  1.0
-    "QPSK":  1.0
-    "8PSK":  1.0
-    "QAM16": 2.0
-    "QAM64": 2.0
 
 output:
   base_dir:        "experiments/5class_diffattention"
