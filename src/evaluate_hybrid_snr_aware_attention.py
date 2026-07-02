@@ -10,12 +10,13 @@ The plain differential-attention model was not better everywhere, but it gave
 useful gains in the low/transition SNR region.  The normal attention model was
 stronger at cleaner SNRs.
 
-So this script builds an inference-time hybrid:
+So this script builds an inference-time hybrid.  By default it uses the
+validation split to decide, per low-SNR value, whether normal attention or
+differential attention is better.  That fixed SNR rule is then applied to the
+test split.
 
-    if -8 dB <= SNR <= +2 dB:
-        use plain differential-attention prediction
-    else:
-        use normal-attention prediction
+This avoids test leakage while still targeting the real goal: improve the
+low-SNR region.
 
 Then it compares the hybrid against the normal-attention baseline on the same
 test split.
@@ -75,14 +76,35 @@ def _parse_args():
     p.add_argument(
         "--diff-snr-min",
         type=int,
-        default=-8,
-        help="Minimum SNR using differential attention.",
+        default=-20,
+        help="Minimum SNR considered for differential attention in fixed-band mode.",
     )
     p.add_argument(
         "--diff-snr-max",
         type=int,
         default=2,
-        help="Maximum SNR using differential attention.",
+        help="Maximum SNR using differential attention in fixed-band mode.",
+    )
+    p.add_argument(
+        "--low-snr-max",
+        type=int,
+        default=2,
+        help="Highest SNR treated as low/transition SNR in validation-best mode.",
+    )
+    p.add_argument(
+        "--selection-mode",
+        choices=("validation_best", "fixed_band"),
+        default="validation_best",
+        help=(
+            "validation_best: choose normal/diff per SNR using validation accuracy; "
+            "fixed_band: use diff_snr_min..diff_snr_max."
+        ),
+    )
+    p.add_argument(
+        "--min-val-delta",
+        type=float,
+        default=0.0,
+        help="In validation_best mode, require diff validation accuracy to beat normal by this margin.",
     )
     p.add_argument(
         "--normal-at-upper-boundary",
@@ -125,6 +147,37 @@ def _hybrid_mask(test_snrs: np.ndarray,
     return (test_snrs >= diff_snr_min) & (test_snrs <= diff_snr_max)
 
 
+def _accuracy_by_snr(Y: np.ndarray,
+                     Y_hat: np.ndarray,
+                     snr_labels: np.ndarray,
+                     snrs: list[int]) -> dict[int, float]:
+    out = {}
+    for snr in snrs:
+        mask = snr_labels == snr
+        out[int(snr)] = _accuracy(Y[mask], Y_hat[mask])
+    return out
+
+
+def _validation_best_selection(normal_val_pred: np.ndarray,
+                               diff_val_pred: np.ndarray,
+                               Y_val: np.ndarray,
+                               val_snrs: np.ndarray,
+                               snrs: list[int],
+                               low_snr_max: int,
+                               min_val_delta: float
+                               ) -> tuple[dict[int, str], dict[int, float], dict[int, float]]:
+    normal_val_acc = _accuracy_by_snr(Y_val, normal_val_pred, val_snrs, snrs)
+    diff_val_acc = _accuracy_by_snr(Y_val, diff_val_pred, val_snrs, snrs)
+    selected_by_snr = {}
+    for snr in snrs:
+        snr = int(snr)
+        if snr <= low_snr_max and diff_val_acc[snr] > normal_val_acc[snr] + min_val_delta:
+            selected_by_snr[snr] = "diff_attention"
+        else:
+            selected_by_snr[snr] = "normal_attention"
+    return selected_by_snr, normal_val_acc, diff_val_acc
+
+
 def main():
     args = _parse_args()
 
@@ -156,25 +209,36 @@ def main():
 
     print("\n============================================================")
     print("  Experiment : 5class_hybrid_snr_aware_attention")
-    print("  Rule       : use diff-attention in selected low-SNR band")
-    print(f"  Diff band  : {args.diff_snr_min} dB to {args.diff_snr_max} dB "
-          f"({'upper exclusive' if args.normal_at_upper_boundary else 'inclusive'})")
+    print("  Rule       : SNR-aware normal/diff attention selection")
+    print(f"  Mode       : {args.selection_mode}")
+    if args.selection_mode == "validation_best":
+        print(f"  Low SNR    : SNR <= {args.low_snr_max} dB")
+        print(f"  Val margin : diff must beat normal by > {args.min_val_delta:.4f}")
+    else:
+        print(f"  Diff band  : {args.diff_snr_min} dB to {args.diff_snr_max} dB "
+              f"({'upper exclusive' if args.normal_at_upper_boundary else 'inclusive'})")
     print(f"  Normal ckpt: {ckpt_normal}")
     print(f"  Diff ckpt  : {ckpt_diff}")
     print(f"  Output dir : {out_dir}")
     print("============================================================\n")
 
-    (mods, snrs, lbl), _, _, (X_test, Y_test), (_, _, test_idx) = load_data(
+    (mods, snrs, lbl), _, (X_val, Y_val), (X_test, Y_test), (_, val_idx, test_idx) = load_data(
         args.datasetpath,
         FIVE_CLASS,
         seed=args.seed,
         shuffle_split=False,
     )
+    val_snrs = np.array([lbl[i][1] for i in val_idx], dtype=np.int32)
     test_snrs = np.array([lbl[i][1] for i in test_idx], dtype=np.int32)
+    inputs_val = _make_iq_inputs(X_val)
     inputs_test = _make_iq_inputs(X_test)
 
     normal_model = build_mcldnn_attention(classes=len(FIVE_CLASS))
     normal_model.load_weights(ckpt_normal)
+    print("[hybrid] Predicting normal attention on validation split...")
+    normal_val_pred = normal_model.predict(inputs_val,
+                                           batch_size=args.batch_size,
+                                           verbose=1)
     print("[hybrid] Predicting normal attention...")
     normal_pred = normal_model.predict(inputs_test,
                                        batch_size=args.batch_size,
@@ -182,17 +246,52 @@ def main():
 
     diff_model = build_mcldnn_diffattention(classes=len(FIVE_CLASS))
     diff_model.load_weights(ckpt_diff)
+    print("[hybrid] Predicting differential attention on validation split...")
+    diff_val_pred = diff_model.predict(inputs_val,
+                                       batch_size=args.batch_size,
+                                       verbose=1)
     print("[hybrid] Predicting differential attention...")
     diff_pred = diff_model.predict(inputs_test,
                                    batch_size=args.batch_size,
                                    verbose=1)
 
-    use_diff = _hybrid_mask(
-        test_snrs,
-        diff_snr_min=args.diff_snr_min,
-        diff_snr_max=args.diff_snr_max,
-        normal_at_upper_boundary=args.normal_at_upper_boundary,
-    )
+    if args.selection_mode == "validation_best":
+        selected_by_snr, normal_val_acc, diff_val_acc = _validation_best_selection(
+            normal_val_pred=normal_val_pred,
+            diff_val_pred=diff_val_pred,
+            Y_val=Y_val,
+            val_snrs=val_snrs,
+            snrs=snrs,
+            low_snr_max=args.low_snr_max,
+            min_val_delta=args.min_val_delta,
+        )
+        use_diff = np.array(
+            [selected_by_snr[int(s)] == "diff_attention" for s in test_snrs],
+            dtype=bool,
+        )
+    else:
+        use_diff = _hybrid_mask(
+            test_snrs,
+            diff_snr_min=args.diff_snr_min,
+            diff_snr_max=args.diff_snr_max,
+            normal_at_upper_boundary=args.normal_at_upper_boundary,
+        )
+        selected_by_snr = {
+            int(s): (
+                "diff_attention"
+                if bool(_hybrid_mask(
+                    np.array([s], dtype=np.int32),
+                    diff_snr_min=args.diff_snr_min,
+                    diff_snr_max=args.diff_snr_max,
+                    normal_at_upper_boundary=args.normal_at_upper_boundary,
+                )[0])
+                else "normal_attention"
+            )
+            for s in snrs
+        }
+        normal_val_acc = _accuracy_by_snr(Y_val, normal_val_pred, val_snrs, snrs)
+        diff_val_acc = _accuracy_by_snr(Y_val, diff_val_pred, val_snrs, snrs)
+
     hybrid_pred = normal_pred.copy()
     hybrid_pred[use_diff] = diff_pred[use_diff]
 
@@ -213,14 +312,39 @@ def main():
     with open(res_dir / "hybrid_rule.txt", "w", encoding="utf-8") as f:
         f.write("Hybrid SNR-aware attention rule\n")
         f.write("================================\n")
-        f.write(f"Use differential attention when SNR >= {args.diff_snr_min} and ")
-        if args.normal_at_upper_boundary:
-            f.write(f"SNR < {args.diff_snr_max}.\n")
+        f.write(f"selection_mode={args.selection_mode}\n")
+        if args.selection_mode == "validation_best":
+            f.write(f"Use validation accuracy to choose per SNR for SNR <= {args.low_snr_max} dB.\n")
+            f.write(f"min_val_delta={args.min_val_delta:.6f}\n")
+            f.write("Use normal attention for cleaner SNRs unless validation selected diff.\n")
         else:
-            f.write(f"SNR <= {args.diff_snr_max}.\n")
-        f.write("Use normal attention otherwise.\n")
+            f.write(f"Use differential attention when SNR >= {args.diff_snr_min} and ")
+            if args.normal_at_upper_boundary:
+                f.write(f"SNR < {args.diff_snr_max}.\n")
+            else:
+                f.write(f"SNR <= {args.diff_snr_max}.\n")
+            f.write("Use normal attention otherwise.\n")
         f.write(f"Normal checkpoint: {ckpt_normal}\n")
         f.write(f"Diff checkpoint  : {ckpt_diff}\n")
+
+    with open(res_dir / "hybrid_snr_selection.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "snr",
+            "selected_model",
+            "normal_val_accuracy",
+            "diff_val_accuracy",
+            "diff_minus_normal_val",
+        ])
+        for snr in snrs:
+            snr = int(snr)
+            writer.writerow([
+                snr,
+                selected_by_snr[snr],
+                normal_val_acc[snr],
+                diff_val_acc[snr],
+                diff_val_acc[snr] - normal_val_acc[snr],
+            ])
 
     conf_normal, _, _ = calculate_confusion_matrix(Y_test, normal_pred, mods)
     conf_hybrid, _, _ = calculate_confusion_matrix(Y_test, hybrid_pred, mods)
@@ -262,11 +386,15 @@ def main():
             "hybrid_accuracy",
             "delta_hybrid_minus_normal",
             "selected_model",
+            "normal_val_accuracy",
+            "diff_val_accuracy",
+            "diff_minus_normal_val",
         ])
 
         for i, snr in enumerate(snrs):
             mask = test_snrs == snr
-            selected = "diff_attention" if bool(use_diff[mask][0]) else "normal_attention"
+            snr_int = int(snr)
+            selected = selected_by_snr[snr_int]
 
             Yn = Y_test[mask]
             normal_snr_pred = normal_pred[mask]
@@ -285,6 +413,9 @@ def main():
                 acc_hybrid[snr],
                 acc_hybrid[snr] - acc_normal[snr],
                 selected,
+                normal_val_acc[snr_int],
+                diff_val_acc[snr_int],
+                diff_val_acc[snr_int] - normal_val_acc[snr_int],
             ])
 
             plot_confusion_matrix(
