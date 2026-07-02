@@ -222,7 +222,27 @@ def main():
         f.write(f"Normal checkpoint: {ckpt_normal}\n")
         f.write(f"Diff checkpoint  : {ckpt_diff}\n")
 
+    conf_normal, _, _ = calculate_confusion_matrix(Y_test, normal_pred, mods)
     conf_hybrid, _, _ = calculate_confusion_matrix(Y_test, hybrid_pred, mods)
+    conf_delta = conf_hybrid - conf_normal
+
+    with open(res_dir / "confusion_normal_all_snrs.dat", "wb") as f:
+        pickle.dump(conf_normal, f)
+    with open(res_dir / "confusion_hybrid_all_snrs.dat", "wb") as f:
+        pickle.dump(conf_hybrid, f)
+    np.savetxt(res_dir / "confusion_normal_all_snrs.csv",
+               conf_normal, delimiter=",")
+    np.savetxt(res_dir / "confusion_hybrid_all_snrs.csv",
+               conf_hybrid, delimiter=",")
+    np.savetxt(res_dir / "confusion_hybrid_minus_normal_all_snrs.csv",
+               conf_delta, delimiter=",")
+
+    plot_confusion_matrix(
+        conf_normal,
+        labels=mods,
+        title="Confusion Matrix — Normal Attention baseline (all SNRs)",
+        save_filename=str(fig_dir / "confusion_normal_all_snrs.png"),
+    )
     plot_confusion_matrix(
         conf_hybrid,
         labels=mods,
