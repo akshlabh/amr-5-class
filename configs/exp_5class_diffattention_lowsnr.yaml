@@ -1,0 +1,56 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN Differential-Attention trained on low SNR only
+# =============================================================================
+# Classes : BPSK, QPSK, 8PSK, QAM16, QAM64
+# Model   : mcldnn_diffattention
+# SNR     : -20 dB to 0 dB only
+# Loss    : Standard categorical cross-entropy, no class weighting
+#
+# Purpose
+# -------
+# Test whether differential attention improves when it is trained specifically
+# on the low-SNR region instead of learning all SNR regimes together.
+#
+# Comparison target:
+#   Compare against the normal all-SNR trained differential-attention model:
+#       experiments/5class_diffattention/
+#
+# Fair comparison:
+#   The notebook evaluates both models on the same -20..0 dB low-SNR test split.
+# =============================================================================
+
+experiment:
+  name: "5class_diffattention_lowsnr"
+  description: "MCLDNN differential attention trained only on -20 to 0 dB SNR"
+  track: "diffattention_lowsnr"
+  seed: 2016
+  model: "mcldnn_diffattention"
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+snr_range: [-20, 0]
+shuffle_split: false
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.5
+  early_stopping_patience: 20
+  reduce_lr_patience: 8
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.0005
+
+output:
+  base_dir:        "experiments/5class_diffattention_lowsnr"
+  checkpoint_path: "experiments/5class_diffattention_lowsnr/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/5class_diffattention_lowsnr/logs"
+  figure_dir:      "experiments/5class_diffattention_lowsnr/figures"
+  result_dir:      "experiments/5class_diffattention_lowsnr/results"
