@@ -1,0 +1,2 @@
+comparison,normal_accuracy_percent,hybrid_accuracy_percent,delta_percent_points,normal_loss,hybrid_loss
+Hybrid - Normal,61.23499999999999,62.35000000000001,1.1150000000000104,0.9176880717277528,0.9767154455184937

@@ -1,0 +1,53 @@
+# =============================================================================
+# Experiment: Lightweight SNR Gate for Hybrid SNR-aware Attention
+# =============================================================================
+# Goal
+# ----
+# Predict whether an IQ window belongs to the low-SNR or high-SNR routing region:
+#
+#   class 0: SNR <= 0 dB  -> differential attention
+#   class 1: SNR >  0 dB  -> normal attention
+#
+# This model does NOT classify modulation type.  It only chooses the route for
+# the hybrid attention system.
+# =============================================================================
+
+experiment:
+  name: "snr_gate_lightweight"
+  description: "Lightweight binary SNR-region gate for hybrid attention routing"
+  seed: 2016
+  model: "snr_gate"
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+# Same default split behavior as the main 5-class experiments.
+shuffle_split: false
+
+# Routing threshold:
+#   low SNR  = SNR <= threshold_db
+#   high SNR = SNR >  threshold_db
+threshold_db: 0.0
+
+training:
+  epochs: 300
+  batch_size: 512
+  dropout_rate: 0.15
+  early_stopping_patience: 25
+  reduce_lr_patience: 8
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.001
+
+output:
+  base_dir:        "experiments/snr_gate_lightweight"
+  checkpoint_path: "experiments/snr_gate_lightweight/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/snr_gate_lightweight/logs"
+  figure_dir:      "experiments/snr_gate_lightweight/figures"
+  result_dir:      "experiments/snr_gate_lightweight/results"

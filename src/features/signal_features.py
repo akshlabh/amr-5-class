@@ -100,6 +100,175 @@ def extract_amplitude_features(X_raw: np.ndarray,
     ).astype(np.float32)
 
 
+def extract_snr_gate_features(X_raw: np.ndarray,
+                              eps: float = 1e-8) -> tuple[np.ndarray, list[str]]:
+    """
+    Extract lightweight global features for binary SNR-region routing.
+
+    Target use
+    ----------
+    This feature vector is designed for an automatic hybrid-attention gate:
+
+        class 0: low SNR  (SNR <= 0 dB)  -> use differential attention
+        class 1: high SNR (SNR >  0 dB)  -> use normal attention
+
+    Important note
+    --------------
+    The repository dataset loader RMS-normalizes every IQ window.  Therefore
+    the gate must not rely on absolute received power.  Instead, these features
+    describe noise/cleanliness proxies that survive RMS normalization:
+
+    * amplitude distribution shape
+    * peak-to-average behavior
+    * adjacent-sample roughness
+    * phase-increment randomness/concentration
+    * short-lag complex autocorrelation
+
+    Returns
+    -------
+    features : np.ndarray
+        Shape (N, 29), dtype float32.
+    names : list[str]
+        Feature names in column order.
+    """
+    X = _validate_iq_array(X_raw)
+    I = X[:, 0, :]
+    Q = X[:, 1, :]
+    z = I + 1j * Q
+
+    amp = np.sqrt(I ** 2 + Q ** 2)
+    power = amp ** 2
+    mean_power = np.mean(power, axis=1) + eps
+
+    # Amplitude distribution and peak statistics.
+    amp_mean = np.mean(amp, axis=1)
+    amp_std = np.std(amp, axis=1)
+    amp_max = np.max(amp, axis=1)
+    amp_p10 = np.percentile(amp, 10, axis=1)
+    amp_p25 = np.percentile(amp, 25, axis=1)
+    amp_p50 = np.percentile(amp, 50, axis=1)
+    amp_p75 = np.percentile(amp, 75, axis=1)
+    amp_p90 = np.percentile(amp, 90, axis=1)
+    amp_p95 = np.percentile(amp, 95, axis=1)
+    amp_p99 = np.percentile(amp, 99, axis=1)
+    amp_iqr = amp_p75 - amp_p25
+    par = np.max(power, axis=1) / mean_power
+
+    # Robust skew/kurtosis without scipy.
+    amp_centered = amp - amp_mean[:, None]
+    amp_std_safe = amp_std[:, None] + eps
+    amp_skew = np.mean((amp_centered / amp_std_safe) ** 3, axis=1)
+    amp_kurt = np.mean((amp_centered / amp_std_safe) ** 4, axis=1)
+
+    # Temporal roughness. Low SNR tends to create more sample-to-sample jitter.
+    dz = np.diff(z, axis=1)
+    d_amp = np.abs(dz)
+    diff_power = np.abs(dz) ** 2
+    roughness = np.mean(diff_power, axis=1) / mean_power
+    d_amp_mean = np.mean(d_amp, axis=1)
+    d_amp_std = np.std(d_amp, axis=1)
+    d_amp_p90 = np.percentile(d_amp, 90, axis=1)
+    d_amp_p95 = np.percentile(d_amp, 95, axis=1)
+
+    # Differential phase circular statistics.
+    phase_step = np.angle(z[:, 1:] * np.conj(z[:, :-1]))
+    cos_mean = np.mean(np.cos(phase_step), axis=1)
+    sin_mean = np.mean(np.sin(phase_step), axis=1)
+    phase_concentration = np.sqrt(cos_mean ** 2 + sin_mean ** 2)
+    phase_step_abs_mean = np.mean(np.abs(phase_step), axis=1)
+    phase_step_std = np.std(phase_step, axis=1)
+
+    # Short-lag complex autocorrelation magnitudes. Clean structured signals
+    # usually preserve more local correlation than noise-dominated windows.
+    def _corr_mag(lag: int) -> np.ndarray:
+        a = z[:, :-lag]
+        b = z[:, lag:]
+        num = np.mean(a * np.conj(b), axis=1)
+        den = np.sqrt(np.mean(np.abs(a) ** 2, axis=1) *
+                      np.mean(np.abs(b) ** 2, axis=1)) + eps
+        return np.abs(num) / den
+
+    corr_lag1 = _corr_mag(1)
+    corr_lag2 = _corr_mag(2)
+    corr_lag4 = _corr_mag(4)
+    corr_lag8 = _corr_mag(8)
+
+    # I/Q spread and balance after RMS normalization.
+    i_std = np.std(I, axis=1)
+    q_std = np.std(Q, axis=1)
+    iq_balance = np.abs(i_std - q_std) / (i_std + q_std + eps)
+
+    names = [
+        "amp_mean",
+        "amp_std",
+        "amp_max",
+        "amp_p10",
+        "amp_p25",
+        "amp_p50",
+        "amp_p75",
+        "amp_p90",
+        "amp_p95",
+        "amp_p99",
+        "amp_iqr",
+        "log1p_par",
+        "amp_skew",
+        "amp_kurt",
+        "roughness",
+        "d_amp_mean",
+        "d_amp_std",
+        "d_amp_p90",
+        "d_amp_p95",
+        "phase_concentration",
+        "phase_step_abs_mean",
+        "phase_step_std",
+        "corr_lag1",
+        "corr_lag2",
+        "corr_lag4",
+        "corr_lag8",
+        "i_std",
+        "q_std",
+        "iq_balance",
+    ]
+    features = np.stack(
+        [
+            amp_mean,
+            amp_std,
+            amp_max,
+            amp_p10,
+            amp_p25,
+            amp_p50,
+            amp_p75,
+            amp_p90,
+            amp_p95,
+            amp_p99,
+            amp_iqr,
+            np.log1p(par),
+            amp_skew,
+            amp_kurt,
+            roughness,
+            d_amp_mean,
+            d_amp_std,
+            d_amp_p90,
+            d_amp_p95,
+            phase_concentration,
+            phase_step_abs_mean,
+            phase_step_std,
+            corr_lag1,
+            corr_lag2,
+            corr_lag4,
+            corr_lag8,
+            i_std,
+            q_std,
+            iq_balance,
+        ],
+        axis=1,
+    ).astype(np.float32)
+
+    if not np.isfinite(features).all():
+        raise ValueError("SNR gate features contain NaN or infinite values.")
+    return features, names
+
+
 def estimate_qam16_amplitude_boundary(X_raw: np.ndarray,
                                       y_onehot: np.ndarray,
                                       classes: list[str],

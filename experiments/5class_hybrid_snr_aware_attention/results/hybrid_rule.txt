@@ -1,0 +1,8 @@
+Hybrid SNR-aware attention rule
+================================
+selection_mode=validation_best
+Use validation accuracy to choose per SNR for SNR <= 2 dB.
+min_val_delta=0.000000
+Use normal attention for cleaner SNRs unless validation selected diff.
+Normal checkpoint: experiments/5class_attention/checkpoints/best_model.weights.h5
+Diff checkpoint  : experiments/5class_diffattention/checkpoints/best_model.weights.h5
