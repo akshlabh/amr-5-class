@@ -1,0 +1,49 @@
+# =============================================================================
+# Experiment: 11-class MCLDNN-Differential-Attention
+# =============================================================================
+# Classes : All 11 RadioML2016.10a modulation classes
+# Model   : MCLDNN with gated differential self-attention
+# Purpose : Train the differential-attention model for full 11-class comparison.
+# =============================================================================
+
+experiment:
+  name: "11class_diffattention"
+  description: "MCLDNN differential self-attention on all 11 RadioML2016.10a classes"
+  track: "attention_11class"
+  seed: 2016
+  model: "mcldnn_diffattention"
+
+dataset:
+  path: "data/RML2016.10a_dict.pkl"
+  classes:
+    - "8PSK"
+    - "AM-DSB"
+    - "AM-SSB"
+    - "BPSK"
+    - "CPFSK"
+    - "GFSK"
+    - "PAM4"
+    - "QAM16"
+    - "QAM64"
+    - "QPSK"
+    - "WBFM"
+
+# Same split as the normal 11-class attention model.
+shuffle_split: false
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.5
+  early_stopping_patience: 20
+  reduce_lr_patience: 8
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.0005
+
+output:
+  base_dir:        "experiments/11class_diffattention"
+  checkpoint_path: "experiments/11class_diffattention/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/11class_diffattention/logs"
+  figure_dir:      "experiments/11class_diffattention/figures"
+  result_dir:      "experiments/11class_diffattention/results"
