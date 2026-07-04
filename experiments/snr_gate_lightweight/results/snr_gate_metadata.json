@@ -1,0 +1,43 @@
+{
+  "experiment": "snr_gate_lightweight",
+  "threshold_db": 0.0,
+  "class_mapping": {
+    "0": "low_snr <= 0 dB -> differential attention",
+    "1": "high_snr > 0 dB -> normal attention"
+  },
+  "feature_dim": 29,
+  "feature_names": [
+    "amp_mean",
+    "amp_std",
+    "amp_max",
+    "amp_p10",
+    "amp_p25",
+    "amp_p50",
+    "amp_p75",
+    "amp_p90",
+    "amp_p95",
+    "amp_p99",
+    "amp_iqr",
+    "log1p_par",
+    "amp_skew",
+    "amp_kurt",
+    "roughness",
+    "d_amp_mean",
+    "d_amp_std",
+    "d_amp_p90",
+    "d_amp_p95",
+    "phase_concentration",
+    "phase_step_abs_mean",
+    "phase_step_std",
+    "corr_lag1",
+    "corr_lag2",
+    "corr_lag4",
+    "corr_lag8",
+    "i_std",
+    "q_std",
+    "iq_balance"
+  ],
+  "test_accuracy": 0.991599977016449,
+  "checkpoint_path": "experiments/snr_gate_lightweight/checkpoints/best_model.weights.h5",
+  "scaler_path": "experiments/snr_gate_lightweight/results/snr_gate_feature_scaler.npz"
+}
