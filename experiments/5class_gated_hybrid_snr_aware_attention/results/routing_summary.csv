@@ -1,0 +1,7 @@
+metric,value
+threshold_db,0.0
+snr_gate_route_accuracy,0.9916
+manual_diff_route_count,11000
+manual_normal_route_count,9000
+gated_diff_route_count,11102
+gated_normal_route_count,8898

@@ -1,0 +1,5 @@
+model,loss,accuracy
+normal_attention,0.9176880717277527,0.61235
+diff_attention,0.9911078214645386,0.57335
+manual_hybrid_true_snr,0.9775853753089905,0.62155
+gated_hybrid_predicted_snr,0.9770938754081726,0.6219
