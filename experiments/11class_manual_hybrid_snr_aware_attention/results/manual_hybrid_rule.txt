@@ -1,0 +1,7 @@
+11-class manual hybrid SNR-aware attention rule
+===============================================
+SNR <= 0 dB -> differential attention
+SNR >  0 dB -> normal attention
+No gated SNR prediction model is used.
+Normal checkpoint: experiments/11class_attention/checkpoints/best_model.weights.h5
+Diff checkpoint  : experiments/11class_diffattention/checkpoints/best_model.weights.h5
