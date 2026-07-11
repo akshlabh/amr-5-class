@@ -167,6 +167,152 @@ def _moving_average(values: list[float] | np.ndarray, window: int) -> np.ndarray
     return out
 
 
+def _isotonic_increasing(values: list[float] | np.ndarray) -> np.ndarray:
+    """
+    Pool-adjacent-violators isotonic regression for a non-decreasing trend.
+
+    Accuracy vs SNR should be broadly non-decreasing physically: as SNR
+    improves, the received signal becomes cleaner.  The raw per-SNR test curve
+    can zig-zag because each SNR point is a finite sample estimate.  This
+    function denoises the trend without using any future information beyond the
+    sequence itself.
+    """
+    y = [float(v) for v in values]
+    blocks = []
+    for val in y:
+        blocks.append({"sum": val, "count": 1, "avg": val})
+        while len(blocks) >= 2 and blocks[-2]["avg"] > blocks[-1]["avg"]:
+            b2 = blocks.pop()
+            b1 = blocks.pop()
+            merged = {
+                "sum": b1["sum"] + b2["sum"],
+                "count": b1["count"] + b2["count"],
+            }
+            merged["avg"] = merged["sum"] / merged["count"]
+            blocks.append(merged)
+
+    out = []
+    for block in blocks:
+        out.extend([block["avg"]] * block["count"])
+    return np.asarray(out, dtype=np.float32)
+
+
+def _regime_label(snr: int) -> str:
+    """Stable SNR regimes for less noisy reporting than single-SNR points."""
+    if snr <= -14:
+        return "very_low_-20_to_-14"
+    if snr <= -6:
+        return "low_-12_to_-6"
+    if snr <= 0:
+        return "transition_-4_to_0"
+    if snr <= 8:
+        return "medium_2_to_8"
+    return "high_10_to_18"
+
+
+def _save_trend_and_regime_tables(rows: list[dict], res_dir: Path) -> tuple[list[dict], list[dict]]:
+    snrs = [int(r["snr"]) for r in rows]
+    normal = np.array([r["normal_attention_accuracy"] for r in rows], dtype=np.float32)
+    diff = np.array([r["diff_attention_accuracy"] for r in rows], dtype=np.float32)
+    hard = np.array([r["hard_validation_hybrid_accuracy"] for r in rows], dtype=np.float32)
+    smooth = np.array([r["smooth_alpha_hybrid_accuracy"] for r in rows], dtype=np.float32)
+
+    normal_trend = _isotonic_increasing(normal)
+    diff_trend = _isotonic_increasing(diff)
+    hard_trend = _isotonic_increasing(hard)
+    smooth_trend = _isotonic_increasing(smooth)
+
+    trend_rows = []
+    with open(res_dir / "trend_smoothed_acc_per_snr.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "snr",
+            "normal_raw",
+            "diff_raw",
+            "hard_hybrid_raw",
+            "smooth_hybrid_raw",
+            "normal_monotonic_trend",
+            "diff_monotonic_trend",
+            "hard_hybrid_monotonic_trend",
+            "smooth_hybrid_monotonic_trend",
+            "smooth_hybrid_trend_minus_normal_trend",
+        ])
+        for i, snr in enumerate(snrs):
+            row = {
+                "snr": snr,
+                "normal_raw": float(normal[i]),
+                "diff_raw": float(diff[i]),
+                "hard_hybrid_raw": float(hard[i]),
+                "smooth_hybrid_raw": float(smooth[i]),
+                "normal_monotonic_trend": float(normal_trend[i]),
+                "diff_monotonic_trend": float(diff_trend[i]),
+                "hard_hybrid_monotonic_trend": float(hard_trend[i]),
+                "smooth_hybrid_monotonic_trend": float(smooth_trend[i]),
+                "smooth_hybrid_trend_minus_normal_trend": float(smooth_trend[i] - normal_trend[i]),
+            }
+            trend_rows.append(row)
+            writer.writerow([
+                row["snr"],
+                row["normal_raw"],
+                row["diff_raw"],
+                row["hard_hybrid_raw"],
+                row["smooth_hybrid_raw"],
+                row["normal_monotonic_trend"],
+                row["diff_monotonic_trend"],
+                row["hard_hybrid_monotonic_trend"],
+                row["smooth_hybrid_monotonic_trend"],
+                row["smooth_hybrid_trend_minus_normal_trend"],
+            ])
+
+    regimes = []
+    for label in [
+        "very_low_-20_to_-14",
+        "low_-12_to_-6",
+        "transition_-4_to_0",
+        "medium_2_to_8",
+        "high_10_to_18",
+    ]:
+        idx = [i for i, snr in enumerate(snrs) if _regime_label(snr) == label]
+        if not idx:
+            continue
+        regime = {
+            "regime": label,
+            "snr_values": " ".join(str(snrs[i]) for i in idx),
+            "normal_attention_accuracy": float(np.mean(normal[idx])),
+            "diff_attention_accuracy": float(np.mean(diff[idx])),
+            "hard_validation_hybrid_accuracy": float(np.mean(hard[idx])),
+            "smooth_alpha_hybrid_accuracy": float(np.mean(smooth[idx])),
+        }
+        regime["smooth_hybrid_minus_normal"] = (
+            regime["smooth_alpha_hybrid_accuracy"] - regime["normal_attention_accuracy"]
+        )
+        regimes.append(regime)
+
+    with open(res_dir / "regime_average_accuracy.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "regime",
+            "snr_values",
+            "normal_attention_accuracy",
+            "diff_attention_accuracy",
+            "hard_validation_hybrid_accuracy",
+            "smooth_alpha_hybrid_accuracy",
+            "smooth_hybrid_minus_normal",
+        ])
+        for r in regimes:
+            writer.writerow([
+                r["regime"],
+                r["snr_values"],
+                r["normal_attention_accuracy"],
+                r["diff_attention_accuracy"],
+                r["hard_validation_hybrid_accuracy"],
+                r["smooth_alpha_hybrid_accuracy"],
+                r["smooth_hybrid_minus_normal"],
+            ])
+
+    return trend_rows, regimes
+
+
 def _plot_curves(rows: list[dict], fig_dir: Path, presentation_window: int):
     import matplotlib
     matplotlib.use("Agg")
@@ -253,6 +399,80 @@ def _plot_curves(rows: list[dict], fig_dir: Path, presentation_window: int):
     plt.tight_layout()
     plt.savefig(fig_dir / "smooth_hybrid_smoothed_delta_by_snr.png",
                 dpi=200, bbox_inches="tight")
+    plt.close()
+
+
+def _plot_trend_and_regime(trend_rows: list[dict], regime_rows: list[dict], fig_dir: Path):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    snrs = [r["snr"] for r in trend_rows]
+    normal_raw = np.array([100 * r["normal_raw"] for r in trend_rows])
+    diff_raw = np.array([100 * r["diff_raw"] for r in trend_rows])
+    hybrid_raw = np.array([100 * r["smooth_hybrid_raw"] for r in trend_rows])
+    normal_trend = np.array([100 * r["normal_monotonic_trend"] for r in trend_rows])
+    diff_trend = np.array([100 * r["diff_monotonic_trend"] for r in trend_rows])
+    hybrid_trend = np.array([100 * r["smooth_hybrid_monotonic_trend"] for r in trend_rows])
+
+    plt.figure(figsize=(12, 6))
+    plt.scatter(snrs, normal_raw, color="#1f77b4", alpha=0.25, s=35)
+    plt.scatter(snrs, diff_raw, color="#ff7f0e", alpha=0.25, s=35)
+    plt.scatter(snrs, hybrid_raw, color="#2ca02c", alpha=0.25, s=45)
+    plt.plot(snrs, normal_trend, marker="o", linewidth=3.0,
+             color="#1f77b4", label="Normal attention monotonic trend")
+    plt.plot(snrs, diff_trend, marker="s", linewidth=3.0,
+             color="#ff7f0e", label="Differential attention monotonic trend")
+    plt.plot(snrs, hybrid_trend, marker="D", linewidth=3.2,
+             color="#2ca02c", label="Smooth hybrid monotonic trend")
+    plt.axvline(0, color="black", linestyle="--", alpha=0.55, label="0 dB")
+    plt.xlabel("SNR (dB)")
+    plt.ylabel("Accuracy (%)")
+    plt.title("Monotonic Trend-smoothed Accuracy vs SNR")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.xticks(snrs)
+    plt.tight_layout()
+    plt.savefig(fig_dir / "smooth_hybrid_monotonic_trend_acc_vs_snr.png",
+                dpi=220, bbox_inches="tight")
+    plt.close()
+
+    trend_delta = hybrid_trend - normal_trend
+    plt.figure(figsize=(11, 4.8))
+    plt.plot(snrs, trend_delta, marker="D", linewidth=2.8,
+             color="#2ca02c", label="Hybrid trend - normal trend")
+    plt.axhline(0, color="black", linewidth=1)
+    plt.axvline(0, color="black", linestyle="--", alpha=0.55)
+    plt.xlabel("SNR (dB)")
+    plt.ylabel("Delta accuracy (percentage points)")
+    plt.title("Monotonic Trend Delta: Smooth Hybrid minus Normal")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_dir / "smooth_hybrid_monotonic_trend_delta.png",
+                dpi=220, bbox_inches="tight")
+    plt.close()
+
+    labels = [r["regime"].replace("_", "\n") for r in regime_rows]
+    normal = np.array([100 * r["normal_attention_accuracy"] for r in regime_rows])
+    diff = np.array([100 * r["diff_attention_accuracy"] for r in regime_rows])
+    hybrid = np.array([100 * r["smooth_alpha_hybrid_accuracy"] for r in regime_rows])
+    x = np.arange(len(labels))
+    width = 0.25
+
+    plt.figure(figsize=(12, 5.8))
+    plt.bar(x - width, normal, width=width, label="Normal attention")
+    plt.bar(x, diff, width=width, label="Differential attention")
+    plt.bar(x + width, hybrid, width=width, label="Smooth hybrid")
+    plt.ylabel("Average accuracy (%)")
+    plt.xlabel("SNR regime")
+    plt.title("Stable SNR-regime Average Accuracy")
+    plt.xticks(x, labels, fontsize=9)
+    plt.grid(True, axis="y", alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_dir / "smooth_hybrid_regime_average_accuracy.png",
+                dpi=220, bbox_inches="tight")
     plt.close()
 
 
@@ -515,6 +735,8 @@ def main():
     )
 
     _plot_curves(rows, fig_dir, args.presentation_smooth_window)
+    trend_rows, regime_rows = _save_trend_and_regime_tables(rows, res_dir)
+    _plot_trend_and_regime(trend_rows, regime_rows, fig_dir)
     _plot_alpha(rows, fig_dir)
 
     metadata = {
@@ -526,6 +748,8 @@ def main():
         "alpha_step": args.alpha_step,
         "alpha_sigma_snrs": args.alpha_sigma_snrs,
         "presentation_smooth_window": args.presentation_smooth_window,
+        "trend_smoothing": "monotonic isotonic regression using accuracy-vs-SNR physical prior",
+        "regime_averaging": "very_low, low, transition, medium, high SNR bins",
         "normal_weights": str(normal_weights),
         "diff_weights": str(diff_weights),
     }
