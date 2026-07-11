@@ -68,6 +68,14 @@ def _parse_args():
         default="experiments/5class_diffattention/checkpoints/best_model.weights.h5",
     )
     p.add_argument(
+        "--lstm-baseline-acc-csv",
+        default="experiments/5class_baseline/results/acc_per_snr.csv",
+        help=(
+            "Optional LSTM/MCLDNN baseline acc_per_snr.csv. If present, it is "
+            "included in comparison plots and summary tables."
+        ),
+    )
+    p.add_argument(
         "--output-dir",
         default="experiments/5class_smooth_hybrid_snr_aware_attention",
     )
@@ -118,6 +126,32 @@ def _blend(normal_pred: np.ndarray,
            diff_pred: np.ndarray,
            alpha: np.ndarray | float) -> np.ndarray:
     return (1.0 - alpha) * normal_pred + alpha * diff_pred
+
+
+def _load_lstm_baseline_acc(path: str | Path | None) -> dict[int, float]:
+    """
+    Load the original MCLDNN/LSTM baseline per-SNR accuracy if available.
+
+    The baseline is not part of the hybrid decision itself.  It is only used as
+    an extra comparison curve in the plots/tables.
+    """
+    if path is None:
+        return {}
+    csv_path = Path(path)
+    if not csv_path.exists():
+        print(f"[smooth-hybrid] LSTM baseline CSV not found, skipping: {csv_path}")
+        return {}
+
+    out: dict[int, float] = {}
+    with open(csv_path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if "snr" not in row or "accuracy" not in row:
+                continue
+            out[int(float(row["snr"]))] = float(row["accuracy"])
+
+    print(f"[smooth-hybrid] Loaded LSTM baseline curve from: {csv_path}")
+    return out
 
 
 def _best_alpha_on_validation(Y: np.ndarray,
@@ -212,11 +246,17 @@ def _regime_label(snr: int) -> str:
 
 def _save_trend_and_regime_tables(rows: list[dict], res_dir: Path) -> tuple[list[dict], list[dict]]:
     snrs = [int(r["snr"]) for r in rows]
+    has_lstm = all("lstm_baseline_accuracy" in r for r in rows)
+    lstm = (
+        np.array([r["lstm_baseline_accuracy"] for r in rows], dtype=np.float32)
+        if has_lstm else None
+    )
     normal = np.array([r["normal_attention_accuracy"] for r in rows], dtype=np.float32)
     diff = np.array([r["diff_attention_accuracy"] for r in rows], dtype=np.float32)
     hard = np.array([r["hard_validation_hybrid_accuracy"] for r in rows], dtype=np.float32)
     smooth = np.array([r["smooth_alpha_hybrid_accuracy"] for r in rows], dtype=np.float32)
 
+    lstm_trend = _isotonic_increasing(lstm) if lstm is not None else None
     normal_trend = _isotonic_increasing(normal)
     diff_trend = _isotonic_increasing(diff)
     hard_trend = _isotonic_increasing(hard)
@@ -225,25 +265,30 @@ def _save_trend_and_regime_tables(rows: list[dict], res_dir: Path) -> tuple[list
     trend_rows = []
     with open(res_dir / "trend_smoothed_acc_per_snr.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow([
+        header = [
             "snr",
+            "lstm_baseline_raw",
             "normal_raw",
             "diff_raw",
             "hard_hybrid_raw",
             "smooth_hybrid_raw",
+            "lstm_baseline_monotonic_trend",
             "normal_monotonic_trend",
             "diff_monotonic_trend",
             "hard_hybrid_monotonic_trend",
             "smooth_hybrid_monotonic_trend",
             "smooth_hybrid_trend_minus_normal_trend",
-        ])
+        ]
+        writer.writerow(header)
         for i, snr in enumerate(snrs):
             row = {
                 "snr": snr,
+                "lstm_baseline_raw": float(lstm[i]) if lstm is not None else "",
                 "normal_raw": float(normal[i]),
                 "diff_raw": float(diff[i]),
                 "hard_hybrid_raw": float(hard[i]),
                 "smooth_hybrid_raw": float(smooth[i]),
+                "lstm_baseline_monotonic_trend": float(lstm_trend[i]) if lstm_trend is not None else "",
                 "normal_monotonic_trend": float(normal_trend[i]),
                 "diff_monotonic_trend": float(diff_trend[i]),
                 "hard_hybrid_monotonic_trend": float(hard_trend[i]),
@@ -253,10 +298,12 @@ def _save_trend_and_regime_tables(rows: list[dict], res_dir: Path) -> tuple[list
             trend_rows.append(row)
             writer.writerow([
                 row["snr"],
+                row["lstm_baseline_raw"],
                 row["normal_raw"],
                 row["diff_raw"],
                 row["hard_hybrid_raw"],
                 row["smooth_hybrid_raw"],
+                row["lstm_baseline_monotonic_trend"],
                 row["normal_monotonic_trend"],
                 row["diff_monotonic_trend"],
                 row["hard_hybrid_monotonic_trend"],
@@ -278,6 +325,7 @@ def _save_trend_and_regime_tables(rows: list[dict], res_dir: Path) -> tuple[list
         regime = {
             "regime": label,
             "snr_values": " ".join(str(snrs[i]) for i in idx),
+            "lstm_baseline_accuracy": float(np.mean(lstm[idx])) if lstm is not None else "",
             "normal_attention_accuracy": float(np.mean(normal[idx])),
             "diff_attention_accuracy": float(np.mean(diff[idx])),
             "hard_validation_hybrid_accuracy": float(np.mean(hard[idx])),
@@ -293,6 +341,7 @@ def _save_trend_and_regime_tables(rows: list[dict], res_dir: Path) -> tuple[list
         writer.writerow([
             "regime",
             "snr_values",
+            "lstm_baseline_accuracy",
             "normal_attention_accuracy",
             "diff_attention_accuracy",
             "hard_validation_hybrid_accuracy",
@@ -303,6 +352,7 @@ def _save_trend_and_regime_tables(rows: list[dict], res_dir: Path) -> tuple[list
             writer.writerow([
                 r["regime"],
                 r["snr_values"],
+                r["lstm_baseline_accuracy"],
                 r["normal_attention_accuracy"],
                 r["diff_attention_accuracy"],
                 r["hard_validation_hybrid_accuracy"],
@@ -319,12 +369,20 @@ def _plot_curves(rows: list[dict], fig_dir: Path, presentation_window: int):
     import matplotlib.pyplot as plt
 
     snrs = [r["snr"] for r in rows]
+    has_lstm = all("lstm_baseline_accuracy" in r for r in rows)
+    lstm = (
+        np.array([100 * r["lstm_baseline_accuracy"] for r in rows])
+        if has_lstm else None
+    )
     normal = np.array([100 * r["normal_attention_accuracy"] for r in rows])
     diff = np.array([100 * r["diff_attention_accuracy"] for r in rows])
     hard = np.array([100 * r["hard_validation_hybrid_accuracy"] for r in rows])
     smooth = np.array([100 * r["smooth_alpha_hybrid_accuracy"] for r in rows])
 
     plt.figure(figsize=(12, 6))
+    if lstm is not None:
+        plt.plot(snrs, lstm, marker="x", linewidth=2.2,
+                 color="#9467bd", label="LSTM baseline")
     plt.plot(snrs, normal, marker="o", linewidth=2.2, label="Normal attention")
     plt.plot(snrs, diff, marker="s", linewidth=2.2, label="Differential attention")
     plt.plot(snrs, hard, marker="^", linewidth=2.3,
@@ -343,14 +401,20 @@ def _plot_curves(rows: list[dict], fig_dir: Path, presentation_window: int):
                 dpi=200, bbox_inches="tight")
     plt.close()
 
+    lstm_s = _moving_average(lstm, presentation_window) if lstm is not None else None
     normal_s = _moving_average(normal, presentation_window)
     diff_s = _moving_average(diff, presentation_window)
     smooth_s = _moving_average(smooth, presentation_window)
 
     plt.figure(figsize=(12, 6))
+    if lstm is not None:
+        plt.plot(snrs, lstm, color="#9467bd", alpha=0.22, linewidth=1.5)
     plt.plot(snrs, normal, color="#1f77b4", alpha=0.22, linewidth=1.5)
     plt.plot(snrs, diff, color="#ff7f0e", alpha=0.22, linewidth=1.5)
     plt.plot(snrs, smooth, color="#2ca02c", alpha=0.22, linewidth=1.5)
+    if lstm_s is not None:
+        plt.plot(snrs, lstm_s, marker="x", linewidth=2.8,
+                 color="#9467bd", label=f"LSTM baseline ({presentation_window}-point smoothed)")
     plt.plot(snrs, normal_s, marker="o", linewidth=2.8,
              color="#1f77b4", label=f"Normal attention ({presentation_window}-point smoothed)")
     plt.plot(snrs, diff_s, marker="s", linewidth=2.8,
@@ -408,17 +472,31 @@ def _plot_trend_and_regime(trend_rows: list[dict], regime_rows: list[dict], fig_
     import matplotlib.pyplot as plt
 
     snrs = [r["snr"] for r in trend_rows]
+    has_lstm = all(r.get("lstm_baseline_raw", "") != "" for r in trend_rows)
+    lstm_raw = (
+        np.array([100 * r["lstm_baseline_raw"] for r in trend_rows])
+        if has_lstm else None
+    )
     normal_raw = np.array([100 * r["normal_raw"] for r in trend_rows])
     diff_raw = np.array([100 * r["diff_raw"] for r in trend_rows])
     hybrid_raw = np.array([100 * r["smooth_hybrid_raw"] for r in trend_rows])
+    lstm_trend = (
+        np.array([100 * r["lstm_baseline_monotonic_trend"] for r in trend_rows])
+        if has_lstm else None
+    )
     normal_trend = np.array([100 * r["normal_monotonic_trend"] for r in trend_rows])
     diff_trend = np.array([100 * r["diff_monotonic_trend"] for r in trend_rows])
     hybrid_trend = np.array([100 * r["smooth_hybrid_monotonic_trend"] for r in trend_rows])
 
     plt.figure(figsize=(12, 6))
+    if lstm_raw is not None:
+        plt.scatter(snrs, lstm_raw, color="#9467bd", alpha=0.25, s=35)
     plt.scatter(snrs, normal_raw, color="#1f77b4", alpha=0.25, s=35)
     plt.scatter(snrs, diff_raw, color="#ff7f0e", alpha=0.25, s=35)
     plt.scatter(snrs, hybrid_raw, color="#2ca02c", alpha=0.25, s=45)
+    if lstm_trend is not None:
+        plt.plot(snrs, lstm_trend, marker="x", linewidth=3.0,
+                 color="#9467bd", label="LSTM baseline monotonic trend")
     plt.plot(snrs, normal_trend, marker="o", linewidth=3.0,
              color="#1f77b4", label="Normal attention monotonic trend")
     plt.plot(snrs, diff_trend, marker="s", linewidth=3.0,
@@ -454,16 +532,27 @@ def _plot_trend_and_regime(trend_rows: list[dict], regime_rows: list[dict], fig_
     plt.close()
 
     labels = [r["regime"].replace("_", "\n") for r in regime_rows]
+    has_lstm_regime = all(r.get("lstm_baseline_accuracy", "") != "" for r in regime_rows)
+    lstm = (
+        np.array([100 * r["lstm_baseline_accuracy"] for r in regime_rows])
+        if has_lstm_regime else None
+    )
     normal = np.array([100 * r["normal_attention_accuracy"] for r in regime_rows])
     diff = np.array([100 * r["diff_attention_accuracy"] for r in regime_rows])
     hybrid = np.array([100 * r["smooth_alpha_hybrid_accuracy"] for r in regime_rows])
     x = np.arange(len(labels))
-    width = 0.25
+    width = 0.2 if lstm is not None else 0.25
 
     plt.figure(figsize=(12, 5.8))
-    plt.bar(x - width, normal, width=width, label="Normal attention")
-    plt.bar(x, diff, width=width, label="Differential attention")
-    plt.bar(x + width, hybrid, width=width, label="Smooth hybrid")
+    if lstm is not None:
+        plt.bar(x - 1.5 * width, lstm, width=width, label="LSTM baseline")
+        plt.bar(x - 0.5 * width, normal, width=width, label="Normal attention")
+        plt.bar(x + 0.5 * width, diff, width=width, label="Differential attention")
+        plt.bar(x + 1.5 * width, hybrid, width=width, label="Smooth hybrid")
+    else:
+        plt.bar(x - width, normal, width=width, label="Normal attention")
+        plt.bar(x, diff, width=width, label="Differential attention")
+        plt.bar(x + width, hybrid, width=width, label="Smooth hybrid")
     plt.ylabel("Average accuracy (%)")
     plt.xlabel("SNR regime")
     plt.title("Stable SNR-regime Average Accuracy")
@@ -534,6 +623,8 @@ def main():
     print(f"  Alpha sigma: {args.alpha_sigma_snrs}")
     print(f"  Output dir : {out_dir}")
     print("============================================================\n")
+
+    lstm_baseline_acc_by_snr = _load_lstm_baseline_acc(args.lstm_baseline_acc_csv)
 
     (mods, snrs, lbl), _, (X_val, Y_val), (X_test, Y_test), (_, val_idx, test_idx) = load_data(
         args.datasetpath,
@@ -631,6 +722,7 @@ def main():
         writer.writerow([
             "snr",
             "n_test",
+            "lstm_baseline_accuracy",
             "normal_attention_accuracy",
             "diff_attention_accuracy",
             "hard_validation_hybrid_accuracy",
@@ -657,6 +749,8 @@ def main():
                 "validation_best_alpha_accuracy": val_best_acc[i],
                 "smoothed_alpha": float(smooth_alpha[i]),
             }
+            if snr in lstm_baseline_acc_by_snr:
+                row["lstm_baseline_accuracy"] = lstm_baseline_acc_by_snr[snr]
             row["smooth_hybrid_minus_normal"] = (
                 row["smooth_alpha_hybrid_accuracy"] - row["normal_attention_accuracy"]
             )
@@ -664,6 +758,7 @@ def main():
             writer.writerow([
                 row["snr"],
                 row["n_test"],
+                row.get("lstm_baseline_accuracy", ""),
                 row["normal_attention_accuracy"],
                 row["diff_attention_accuracy"],
                 row["hard_validation_hybrid_accuracy"],
@@ -685,6 +780,10 @@ def main():
     with open(res_dir / "test_score.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["model", "loss", "accuracy"])
+        if all("lstm_baseline_accuracy" in r for r in rows):
+            n = np.array([r["n_test"] for r in rows], dtype=np.float32)
+            a = np.array([r["lstm_baseline_accuracy"] for r in rows], dtype=np.float32)
+            writer.writerow(["lstm_baseline", "", float(np.sum(n * a) / np.sum(n))])
         for name, pred in score_rows:
             writer.writerow([
                 name,
@@ -750,6 +849,8 @@ def main():
         "presentation_smooth_window": args.presentation_smooth_window,
         "trend_smoothing": "monotonic isotonic regression using accuracy-vs-SNR physical prior",
         "regime_averaging": "very_low, low, transition, medium, high SNR bins",
+        "lstm_baseline_acc_csv": str(args.lstm_baseline_acc_csv),
+        "lstm_baseline_used_in_plots": all("lstm_baseline_accuracy" in r for r in rows),
         "normal_weights": str(normal_weights),
         "diff_weights": str(diff_weights),
     }
@@ -765,6 +866,10 @@ def main():
         f.write("The presentation-smoothed plot is marked separately and is only for visual readability.\n")
 
     print("\n[smooth-hybrid] Summary")
+    if all("lstm_baseline_accuracy" in r for r in rows):
+        n = np.array([r["n_test"] for r in rows], dtype=np.float32)
+        a = np.array([r["lstm_baseline_accuracy"] for r in rows], dtype=np.float32)
+        print(f"  {'lstm_baseline':28s}: {100 * float(np.sum(n * a) / np.sum(n)):.2f}%")
     for name, pred in score_rows:
         print(f"  {name:28s}: {100 * _accuracy(Y_test, pred):.2f}%")
     print(f"  Results saved under           : {out_dir}/")
