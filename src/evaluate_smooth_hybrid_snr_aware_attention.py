@@ -508,6 +508,26 @@ def _plot_trend_and_regime(trend_rows: list[dict], regime_rows: list[dict], fig_
                 dpi=220, bbox_inches="tight")
     plt.close()
 
+    plt.figure(figsize=(12, 6))
+    if lstm_trend is not None:
+        plt.plot(snrs, lstm_trend, marker="x", linewidth=3.0,
+                 color="#9467bd", label="LSTM baseline")
+    plt.plot(snrs, hard_trend, marker="^", linewidth=3.0,
+             color="#1f77b4", label="Hard validation-selected hybrid")
+    plt.plot(snrs, hybrid_trend, marker="D", linewidth=3.2,
+             color="#ff7f0e", label="Smooth validation-calibrated hybrid")
+    plt.axvline(0, color="black", linestyle="--", alpha=0.55, label="0 dB")
+    plt.xlabel("SNR (dB)")
+    plt.ylabel("Accuracy (%)")
+    plt.title("Final Slide: Monotonic Trend-smoothed Accuracy vs SNR")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.xticks(snrs)
+    plt.tight_layout()
+    plt.savefig(fig_dir / "final_slide_monotonic_lstm_hard_smooth_acc_vs_snr.png",
+                dpi=240, bbox_inches="tight")
+    plt.close()
+
     trend_delta = hybrid_trend - normal_trend
     plt.figure(figsize=(11, 4.8))
     plt.plot(snrs, trend_delta, marker="D", linewidth=2.8,
