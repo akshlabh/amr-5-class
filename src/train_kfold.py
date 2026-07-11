@@ -186,6 +186,13 @@ def build_fresh_model(model_type: str,
             dropout_rate=dropout_rate,
             learning_rate=initial_lr,
         )
+    elif model_type == 'mcldnn_diffattention':
+        from src.models.mcldnn_diffattention import build_mcldnn_diffattention
+        model = build_mcldnn_diffattention(
+            classes=n_classes,
+            dropout_rate=dropout_rate,
+            learning_rate=initial_lr,
+        )
     else:  # 'mcldnn' (baseline)
         from src.models.mcldnn import MCLDNN
         model = MCLDNN(

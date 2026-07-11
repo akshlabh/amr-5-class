@@ -1,0 +1,42 @@
+# =============================================================================
+# Experiment: 5-class MCLDNN-Differential-Attention — 5-Fold Cross-Validation
+# =============================================================================
+# Purpose:
+#   Train differential-attention folds for the k-fold smooth hybrid comparison.
+#
+# Splitting:
+#   Same block-stratified protocol as the existing k-fold baseline/attention:
+#   per (modulation, SNR) block, 200 samples are held out for final test and
+#   the remaining 800 samples are rotated across 5 validation folds.
+# =============================================================================
+
+experiment:
+  name:  "5class_diffattention_kfold"
+  model: "mcldnn_diffattention"
+  seed:  2016
+
+dataset:
+  path: "data/RML2016.10a_5class.pkl"
+  classes:
+    - "BPSK"
+    - "QPSK"
+    - "8PSK"
+    - "QAM16"
+    - "QAM64"
+
+kfold:
+  n_folds: 5
+  seed:    2016
+
+training:
+  epochs:                  10000
+  batch_size:              400
+  dropout_rate:            0.5
+  early_stopping_patience: 20
+  reduce_lr_patience:      8
+  reduce_lr_factor:        0.5
+  min_lr:                  1.0e-7
+  initial_lr:              0.0005
+
+output:
+  base_dir: "experiments/5class_diffattention_kfold"
