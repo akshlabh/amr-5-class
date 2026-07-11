@@ -383,8 +383,6 @@ def _plot_curves(rows: list[dict], fig_dir: Path, presentation_window: int):
     if lstm is not None:
         plt.plot(snrs, lstm, marker="x", linewidth=2.2,
                  color="#9467bd", label="LSTM baseline")
-    plt.plot(snrs, normal, marker="o", linewidth=2.2, label="Normal attention")
-    plt.plot(snrs, diff, marker="s", linewidth=2.2, label="Differential attention")
     plt.plot(snrs, hard, marker="^", linewidth=2.3,
              label="Hard validation-selected hybrid")
     plt.plot(snrs, smooth, marker="D", linewidth=2.6,
@@ -402,25 +400,21 @@ def _plot_curves(rows: list[dict], fig_dir: Path, presentation_window: int):
     plt.close()
 
     lstm_s = _moving_average(lstm, presentation_window) if lstm is not None else None
-    normal_s = _moving_average(normal, presentation_window)
-    diff_s = _moving_average(diff, presentation_window)
+    hard_s = _moving_average(hard, presentation_window)
     smooth_s = _moving_average(smooth, presentation_window)
 
     plt.figure(figsize=(12, 6))
     if lstm is not None:
         plt.plot(snrs, lstm, color="#9467bd", alpha=0.22, linewidth=1.5)
-    plt.plot(snrs, normal, color="#1f77b4", alpha=0.22, linewidth=1.5)
-    plt.plot(snrs, diff, color="#ff7f0e", alpha=0.22, linewidth=1.5)
+    plt.plot(snrs, hard, color="#d62728", alpha=0.22, linewidth=1.5)
     plt.plot(snrs, smooth, color="#2ca02c", alpha=0.22, linewidth=1.5)
     if lstm_s is not None:
         plt.plot(snrs, lstm_s, marker="x", linewidth=2.8,
                  color="#9467bd", label=f"LSTM baseline ({presentation_window}-point smoothed)")
-    plt.plot(snrs, normal_s, marker="o", linewidth=2.8,
-             color="#1f77b4", label=f"Normal attention ({presentation_window}-point smoothed)")
-    plt.plot(snrs, diff_s, marker="s", linewidth=2.8,
-             color="#ff7f0e", label=f"Differential attention ({presentation_window}-point smoothed)")
+    plt.plot(snrs, hard_s, marker="^", linewidth=2.8,
+             color="#d62728", label=f"Hard validation hybrid ({presentation_window}-point smoothed)")
     plt.plot(snrs, smooth_s, marker="D", linewidth=3.0,
-             color="#2ca02c", label=f"Smooth hybrid ({presentation_window}-point smoothed)")
+             color="#2ca02c", label=f"Smooth validation hybrid ({presentation_window}-point smoothed)")
     plt.axvline(0, color="black", linestyle="--", alpha=0.55, label="0 dB")
     plt.xlabel("SNR (dB)")
     plt.ylabel("Accuracy (%)")
@@ -479,6 +473,7 @@ def _plot_trend_and_regime(trend_rows: list[dict], regime_rows: list[dict], fig_
     )
     normal_raw = np.array([100 * r["normal_raw"] for r in trend_rows])
     diff_raw = np.array([100 * r["diff_raw"] for r in trend_rows])
+    hard_raw = np.array([100 * r["hard_hybrid_raw"] for r in trend_rows])
     hybrid_raw = np.array([100 * r["smooth_hybrid_raw"] for r in trend_rows])
     lstm_trend = (
         np.array([100 * r["lstm_baseline_monotonic_trend"] for r in trend_rows])
@@ -486,23 +481,21 @@ def _plot_trend_and_regime(trend_rows: list[dict], regime_rows: list[dict], fig_
     )
     normal_trend = np.array([100 * r["normal_monotonic_trend"] for r in trend_rows])
     diff_trend = np.array([100 * r["diff_monotonic_trend"] for r in trend_rows])
+    hard_trend = np.array([100 * r["hard_hybrid_monotonic_trend"] for r in trend_rows])
     hybrid_trend = np.array([100 * r["smooth_hybrid_monotonic_trend"] for r in trend_rows])
 
     plt.figure(figsize=(12, 6))
     if lstm_raw is not None:
         plt.scatter(snrs, lstm_raw, color="#9467bd", alpha=0.25, s=35)
-    plt.scatter(snrs, normal_raw, color="#1f77b4", alpha=0.25, s=35)
-    plt.scatter(snrs, diff_raw, color="#ff7f0e", alpha=0.25, s=35)
+    plt.scatter(snrs, hard_raw, color="#d62728", alpha=0.25, s=35)
     plt.scatter(snrs, hybrid_raw, color="#2ca02c", alpha=0.25, s=45)
     if lstm_trend is not None:
         plt.plot(snrs, lstm_trend, marker="x", linewidth=3.0,
                  color="#9467bd", label="LSTM baseline monotonic trend")
-    plt.plot(snrs, normal_trend, marker="o", linewidth=3.0,
-             color="#1f77b4", label="Normal attention monotonic trend")
-    plt.plot(snrs, diff_trend, marker="s", linewidth=3.0,
-             color="#ff7f0e", label="Differential attention monotonic trend")
+    plt.plot(snrs, hard_trend, marker="^", linewidth=3.0,
+             color="#d62728", label="Hard validation hybrid monotonic trend")
     plt.plot(snrs, hybrid_trend, marker="D", linewidth=3.2,
-             color="#2ca02c", label="Smooth hybrid monotonic trend")
+             color="#2ca02c", label="Smooth validation hybrid monotonic trend")
     plt.axvline(0, color="black", linestyle="--", alpha=0.55, label="0 dB")
     plt.xlabel("SNR (dB)")
     plt.ylabel("Accuracy (%)")
@@ -539,20 +532,19 @@ def _plot_trend_and_regime(trend_rows: list[dict], regime_rows: list[dict], fig_
     )
     normal = np.array([100 * r["normal_attention_accuracy"] for r in regime_rows])
     diff = np.array([100 * r["diff_attention_accuracy"] for r in regime_rows])
+    hard = np.array([100 * r["hard_validation_hybrid_accuracy"] for r in regime_rows])
     hybrid = np.array([100 * r["smooth_alpha_hybrid_accuracy"] for r in regime_rows])
     x = np.arange(len(labels))
-    width = 0.2 if lstm is not None else 0.25
+    width = 0.25 if lstm is not None else 0.35
 
     plt.figure(figsize=(12, 5.8))
     if lstm is not None:
-        plt.bar(x - 1.5 * width, lstm, width=width, label="LSTM baseline")
-        plt.bar(x - 0.5 * width, normal, width=width, label="Normal attention")
-        plt.bar(x + 0.5 * width, diff, width=width, label="Differential attention")
-        plt.bar(x + 1.5 * width, hybrid, width=width, label="Smooth hybrid")
+        plt.bar(x - width, lstm, width=width, label="LSTM baseline")
+        plt.bar(x, hard, width=width, label="Hard validation hybrid")
+        plt.bar(x + width, hybrid, width=width, label="Smooth validation hybrid")
     else:
-        plt.bar(x - width, normal, width=width, label="Normal attention")
-        plt.bar(x, diff, width=width, label="Differential attention")
-        plt.bar(x + width, hybrid, width=width, label="Smooth hybrid")
+        plt.bar(x - width / 2, hard, width=width, label="Hard validation hybrid")
+        plt.bar(x + width / 2, hybrid, width=width, label="Smooth validation hybrid")
     plt.ylabel("Average accuracy (%)")
     plt.xlabel("SNR regime")
     plt.title("Stable SNR-regime Average Accuracy")
