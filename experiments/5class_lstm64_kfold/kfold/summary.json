@@ -1,0 +1,44 @@
+{
+  "exp_name": "5class_lstm64_kfold",
+  "n_folds": 5,
+  "fold_results": [
+    {
+      "fold": 0,
+      "val_acc": 0.606249988079071,
+      "val_loss": 0.9760872721672058,
+      "best_epoch": 152,
+      "n_epochs": 172
+    },
+    {
+      "fold": 1,
+      "val_acc": 0.5775625109672546,
+      "val_loss": 1.013527750968933,
+      "best_epoch": 105,
+      "n_epochs": 125
+    },
+    {
+      "fold": 2,
+      "val_acc": 0.5784375071525574,
+      "val_loss": 0.9440422654151917,
+      "best_epoch": 77,
+      "n_epochs": 97
+    },
+    {
+      "fold": 3,
+      "val_acc": 0.578249990940094,
+      "val_loss": 1.0122709274291992,
+      "best_epoch": 103,
+      "n_epochs": 123
+    },
+    {
+      "fold": 4,
+      "val_acc": 0.5831875205039978,
+      "val_loss": 0.9698019027709961,
+      "best_epoch": 112,
+      "n_epochs": 132
+    }
+  ],
+  "mean_val_acc": 0.584737503528595,
+  "std_val_acc": 0.01094027176161859,
+  "best_fold": 0
+}
