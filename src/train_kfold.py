@@ -167,7 +167,7 @@ def build_fresh_model(model_type: str,
 
     Parameters
     ----------
-    model_type   : 'mcldnn' or 'mcldnn_attention'
+    model_type   : 'mcldnn', 'lstm64', 'mcldnn_attention', or 'mcldnn_diffattention'
     n_classes    : number of output classes
     dropout_rate : dropout probability
     l2_dense     : L2 weight on Dense layers (MCLDNN only)
@@ -192,6 +192,20 @@ def build_fresh_model(model_type: str,
             classes=n_classes,
             dropout_rate=dropout_rate,
             learning_rate=initial_lr,
+        )
+    elif model_type == 'lstm64':
+        from src.models.mcldnn_lstm64 import MCLDNN_LSTM64
+        model = MCLDNN_LSTM64(
+            classes=n_classes,
+            dropout_rate=dropout_rate,
+            l2_dense=l2_dense,
+            l2_lstm=l2_lstm,
+        )
+        model.compile(
+            loss='categorical_crossentropy',
+            optimizer=keras.optimizers.Adam(
+                learning_rate=initial_lr, clipnorm=1.0),
+            metrics=['accuracy'],
         )
     else:  # 'mcldnn' (baseline)
         from src.models.mcldnn import MCLDNN

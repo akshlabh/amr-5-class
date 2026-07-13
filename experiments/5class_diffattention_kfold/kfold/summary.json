@@ -1,0 +1,44 @@
+{
+  "exp_name": "5class_diffattention_kfold",
+  "n_folds": 5,
+  "fold_results": [
+    {
+      "fold": 0,
+      "val_acc": 0.5768125057220459,
+      "val_loss": 0.9626786708831787,
+      "best_epoch": 52,
+      "n_epochs": 72
+    },
+    {
+      "fold": 1,
+      "val_acc": 0.6201249957084656,
+      "val_loss": 1.041133165359497,
+      "best_epoch": 60,
+      "n_epochs": 80
+    },
+    {
+      "fold": 2,
+      "val_acc": 0.6192499995231628,
+      "val_loss": 1.001924753189087,
+      "best_epoch": 53,
+      "n_epochs": 73
+    },
+    {
+      "fold": 3,
+      "val_acc": 0.5804374814033508,
+      "val_loss": 0.9324128031730652,
+      "best_epoch": 51,
+      "n_epochs": 71
+    },
+    {
+      "fold": 4,
+      "val_acc": 0.6311874985694885,
+      "val_loss": 0.9747629761695862,
+      "best_epoch": 55,
+      "n_epochs": 75
+    }
+  ],
+  "mean_val_acc": 0.6055624961853028,
+  "std_val_acc": 0.02242268140346394,
+  "best_fold": 4
+}

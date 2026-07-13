@@ -1,0 +1,20 @@
+{
+  "method": "fourway_kfold_hybrid_comparison",
+  "n_folds": 5,
+  "low_snr_max": 2,
+  "min_val_delta": 0.0,
+  "hybrid_rule": "For each fold and SNR <= 2 dB, choose diff-attention only if its validation accuracy is higher than normal attention. For cleaner SNRs, use normal attention.",
+  "alpha_used": false,
+  "monotonic_smoothing_used": false,
+  "baseline_kfold_dir": "experiments/5class_baseline_kfold/kfold",
+  "baseline_kfold_csv": "experiments/5class_baseline_kfold/kfold/test/acc_per_snr.csv",
+  "baseline_curve_loaded_from_csv": true,
+  "normal_kfold_dir": "experiments/5class_attention_kfold/kfold",
+  "diff_kfold_dir": "experiments/5class_diffattention_kfold/kfold",
+  "overall_mean_across_snr": {
+    "lstm_kfold_accuracy_mean": 0.6314500033855438,
+    "normal_attention_kfold_accuracy_mean": 0.58595000654459,
+    "diff_attention_kfold_accuracy_mean": 0.5993399918079376,
+    "automated_hybrid_kfold_accuracy_mean": 0.6056800082325935
+  }
+}

@@ -56,6 +56,17 @@ def _parse_args():
         default="experiments/5class_baseline_kfold/kfold",
     )
     p.add_argument(
+        "--baseline-model",
+        choices=["mcldnn", "lstm64"],
+        default="mcldnn",
+        help="Model architecture to use for the first curve/fold weights.",
+    )
+    p.add_argument(
+        "--baseline-label",
+        default="LSTM/MCLDNN k-fold",
+        help="Legend label for the first curve.",
+    )
+    p.add_argument(
         "--baseline-kfold-csv",
         default="experiments/5class_baseline_kfold/kfold/test/acc_per_snr.csv",
         help=(
@@ -130,15 +141,25 @@ def _load_acc_per_snr_csv(path: str | Path) -> dict[int, float] | None:
     return out
 
 
-def _build_lstm_baseline_model(n_classes: int):
-    from src.models.mcldnn import MCLDNN
+def _build_lstm_baseline_model(n_classes: int, model_type: str):
+    if model_type == "lstm64":
+        from src.models.mcldnn_lstm64 import MCLDNN_LSTM64
 
-    model = MCLDNN(
-        classes=n_classes,
-        dropout_rate=0.5,
-        l2_dense=1.0e-3,
-        l2_lstm=1.0e-4,
-    )
+        model = MCLDNN_LSTM64(
+            classes=n_classes,
+            dropout_rate=0.5,
+            l2_dense=1.0e-3,
+            l2_lstm=1.0e-4,
+        )
+    else:
+        from src.models.mcldnn import MCLDNN
+
+        model = MCLDNN(
+            classes=n_classes,
+            dropout_rate=0.5,
+            l2_dense=1.0e-3,
+            l2_lstm=1.0e-4,
+        )
     # MCLDNN() returns a compiled model in this codebase when used through
     # training, but load/predict does not require recompilation.  Return as-is.
     return model
@@ -243,14 +264,15 @@ def _summarize_rows(rows: list[dict], path: Path) -> list[dict]:
     return summary
 
 
-def _plot_summary(summary: list[dict], fig_dir: Path, low_snr_max: int):
+def _plot_summary(summary: list[dict], fig_dir: Path, low_snr_max: int,
+                  baseline_label: str):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     snrs = np.array([r["snr"] for r in summary], dtype=np.int32)
     series = [
-        ("lstm_kfold_accuracy", "LSTM/MCLDNN k-fold", "#9467bd", "x"),
+        ("lstm_kfold_accuracy", baseline_label, "#9467bd", "x"),
         ("normal_attention_kfold_accuracy", "Normal attention k-fold", "#1f77b4", "o"),
         ("diff_attention_kfold_accuracy", "Differential attention k-fold", "#d62728", "s"),
         ("automated_hybrid_kfold_accuracy", "Automated hybrid k-fold", "#ff7f0e", "D"),
@@ -287,7 +309,7 @@ def _plot_summary(summary: list[dict], fig_dir: Path, low_snr_max: int):
     plt.plot(snrs, hybrid - diff, marker="s", linewidth=2.4,
              label="Hybrid - differential attention")
     plt.plot(snrs, hybrid - lstm, marker="x", linewidth=2.4,
-             label="Hybrid - LSTM baseline")
+             label=f"Hybrid - {baseline_label}")
     plt.axhline(0, color="black", linewidth=1)
     plt.axvline(low_snr_max, color="black", linestyle="--", alpha=0.55)
     plt.xlabel("SNR (dB)")
@@ -325,6 +347,7 @@ def main():
     print("\n============================================================")
     print("  Experiment : fourway_kfold_hybrid")
     print("  Curves     : LSTM, normal-att, diff-att, automated hybrid")
+    print(f"  LSTM curve : {args.baseline_label} ({args.baseline_model})")
     print("  Hybrid     : validation-selected per fold/SNR; no alpha")
     print(f"  Low SNR max: {args.low_snr_max} dB")
     print(f"  Output dir : {out_dir}")
@@ -364,7 +387,8 @@ def main():
 
         if baseline_weights is not None:
             lstm_pred = _predict_fold_model(
-                lambda: _build_lstm_baseline_model(len(FIVE_CLASS)),
+                lambda: _build_lstm_baseline_model(
+                    len(FIVE_CLASS), args.baseline_model),
                 baseline_weights,
                 inp_test,
                 args.batch_size,
@@ -440,7 +464,12 @@ def main():
         fold_rows,
         res_dir / "fourway_kfold_mean_std_acc_per_snr.csv",
     )
-    _plot_summary(summary, fig_dir, low_snr_max=args.low_snr_max)
+    _plot_summary(
+        summary,
+        fig_dir,
+        low_snr_max=args.low_snr_max,
+        baseline_label=args.baseline_label,
+    )
 
     overall = {}
     for key in [
@@ -464,6 +493,8 @@ def main():
         "alpha_used": False,
         "monotonic_smoothing_used": False,
         "baseline_kfold_dir": str(baseline_dir),
+        "baseline_model": args.baseline_model,
+        "baseline_label": args.baseline_label,
         "baseline_kfold_csv": str(args.baseline_kfold_csv),
         "baseline_curve_loaded_from_csv": baseline_csv_acc is not None,
         "normal_kfold_dir": str(normal_dir),
