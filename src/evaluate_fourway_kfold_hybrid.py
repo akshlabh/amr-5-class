@@ -56,6 +56,15 @@ def _parse_args():
         default="experiments/5class_baseline_kfold/kfold",
     )
     p.add_argument(
+        "--baseline-kfold-csv",
+        default="experiments/5class_baseline_kfold/kfold/test/acc_per_snr.csv",
+        help=(
+            "Existing LSTM/MCLDNN k-fold acc_per_snr.csv. If present, the "
+            "LSTM curve is loaded from this file and baseline fold weights "
+            "are not required."
+        ),
+    )
+    p.add_argument(
         "--normal-kfold-dir",
         default="experiments/5class_attention_kfold/kfold",
     )
@@ -106,6 +115,19 @@ def _require_fold_weights(kfold_dir: Path, fold: int) -> Path:
             "Run src/train_kfold.py for the corresponding k-fold config first."
         )
     return path
+
+
+def _load_acc_per_snr_csv(path: str | Path) -> dict[int, float] | None:
+    path = Path(path)
+    if not path.exists():
+        return None
+    out: dict[int, float] = {}
+    with open(path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            out[int(float(row["snr"]))] = float(row["accuracy"])
+    print(f"[fourway-kfold] Loaded LSTM k-fold curve from CSV: {path}")
+    return out
 
 
 def _build_lstm_baseline_model(n_classes: int):
@@ -298,6 +320,7 @@ def main():
     baseline_dir = Path(args.baseline_kfold_dir)
     normal_dir = Path(args.normal_kfold_dir)
     diff_dir = Path(args.diff_kfold_dir)
+    baseline_csv_acc = _load_acc_per_snr_csv(args.baseline_kfold_csv)
 
     print("\n============================================================")
     print("  Experiment : fourway_kfold_hybrid")
@@ -326,7 +349,10 @@ def main():
 
     for fold in range(args.n_folds):
         print(f"\n[fourway-kfold] Fold {fold + 1}/{args.n_folds}")
-        baseline_weights = _require_fold_weights(baseline_dir, fold)
+        baseline_weights = (
+            None if baseline_csv_acc is not None
+            else _require_fold_weights(baseline_dir, fold)
+        )
         normal_weights = _require_fold_weights(normal_dir, fold)
         diff_weights = _require_fold_weights(diff_dir, fold)
 
@@ -336,12 +362,15 @@ def main():
         val_snrs = np.array([lbl[i][1] for i in val_idx], dtype=np.int32)
         inp_val = prepare_inputs(X_val)
 
-        lstm_pred = _predict_fold_model(
-            lambda: _build_lstm_baseline_model(len(FIVE_CLASS)),
-            baseline_weights,
-            inp_test,
-            args.batch_size,
-        )
+        if baseline_weights is not None:
+            lstm_pred = _predict_fold_model(
+                lambda: _build_lstm_baseline_model(len(FIVE_CLASS)),
+                baseline_weights,
+                inp_test,
+                args.batch_size,
+            )
+        else:
+            lstm_pred = None
         normal_val_pred = _predict_fold_model(
             lambda: _build_normal_attention_model(len(FIVE_CLASS)),
             normal_weights,
@@ -393,7 +422,11 @@ def main():
                 "fold": fold,
                 "snr": snr,
                 "selected_model_for_hybrid": selected_by_snr[snr],
-                "lstm_kfold_accuracy": _accuracy(Y_test[mask], lstm_pred[mask]),
+                "lstm_kfold_accuracy": (
+                    baseline_csv_acc[snr]
+                    if baseline_csv_acc is not None
+                    else _accuracy(Y_test[mask], lstm_pred[mask])
+                ),
                 "normal_attention_kfold_accuracy": _accuracy(Y_test[mask], normal_test_pred[mask]),
                 "diff_attention_kfold_accuracy": _accuracy(Y_test[mask], diff_test_pred[mask]),
                 "automated_hybrid_kfold_accuracy": _accuracy(Y_test[mask], hybrid_pred[mask]),
@@ -431,6 +464,8 @@ def main():
         "alpha_used": False,
         "monotonic_smoothing_used": False,
         "baseline_kfold_dir": str(baseline_dir),
+        "baseline_kfold_csv": str(args.baseline_kfold_csv),
+        "baseline_curve_loaded_from_csv": baseline_csv_acc is not None,
         "normal_kfold_dir": str(normal_dir),
         "diff_kfold_dir": str(diff_dir),
         "overall_mean_across_snr": overall,
