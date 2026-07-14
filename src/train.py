@@ -324,6 +324,7 @@ def main():
     # ── Build model ────────────────────────────────────────────────────────────
     resume_weights = args.resume
     is_attention   = model_type in ('mcldnn_attention',
+                                    'mcldnn_attention_strong',
                                     'mcldnn_diffattention',
                                     'mcldnn_attention_phys',
                                     'mcldnn_attention_amp',
@@ -337,6 +338,13 @@ def main():
         model = build_mcldnn_attention(classes=n_classes,
                                        dropout_rate=dropout_rate,
                                        learning_rate=initial_lr)
+        if resume_weights:
+            model.load_weights(resume_weights)
+    elif model_type == 'mcldnn_attention_strong':
+        from src.models.mcldnn_attention_strong import build_mcldnn_attention_strong
+        model = build_mcldnn_attention_strong(classes=n_classes,
+                                              dropout_rate=dropout_rate,
+                                              learning_rate=initial_lr)
         if resume_weights:
             model.load_weights(resume_weights)
     elif model_type == 'mcldnn_attention_iq_amp_phase':

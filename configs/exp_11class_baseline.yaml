@@ -1,0 +1,51 @@
+# =============================================================================
+# Experiment: 11-class MCLDNN Baseline
+# =============================================================================
+# Classes : All 11 RadioML2016.10a modulation classes
+# Model   : Original MCLDNN baseline with 2×LSTM-128
+# Purpose : Baseline LSTM comparator for 11-class attention experiments.
+# =============================================================================
+
+experiment:
+  name: "11class_baseline"
+  description: "Original MCLDNN LSTM baseline on all 11 RadioML2016.10a classes"
+  track: "attention_11class"
+  seed: 2016
+  model: "mcldnn"
+
+dataset:
+  path: "data/RML2016.10a_dict.pkl"
+  classes:
+    - "8PSK"
+    - "AM-DSB"
+    - "AM-SSB"
+    - "BPSK"
+    - "CPFSK"
+    - "GFSK"
+    - "PAM4"
+    - "QAM16"
+    - "QAM64"
+    - "QPSK"
+    - "WBFM"
+
+# Same original per-(mod,SNR) split used by the existing 11-class attention run.
+shuffle_split: false
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.5
+  early_stopping_patience: 20
+  reduce_lr_patience: 8
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  l2_dense: 1.0e-3
+  l2_lstm: 1.0e-4
+  initial_lr: 0.001
+
+output:
+  base_dir:        "experiments/11class_baseline"
+  checkpoint_path: "experiments/11class_baseline/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/11class_baseline/logs"
+  figure_dir:      "experiments/11class_baseline/figures"
+  result_dir:      "experiments/11class_baseline/results"
