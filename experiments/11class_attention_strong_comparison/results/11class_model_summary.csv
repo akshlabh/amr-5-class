@@ -1,0 +1,4 @@
+model,test_accuracy,mean_snr_accuracy,low_snr_mean_acc_snr_le_0,high_snr_mean_acc_snr_ge_2,per_class_csv_found,results_dir
+Baseline LSTM,0.6267045736312866,0.6267045454545455,0.44388429752066116,0.8501515151515152,False,experiments/11class_baseline
+Normal attention,0.6409090757369995,0.6409090909090909,0.4388842975206612,0.8878282828282829,False,experiments/11class_attention
+Strong attention,0.6745226979255676,0.6745227272727273,0.4720661157024793,0.9219696969696971,False,experiments/11class_attention_strong
