@@ -1,0 +1,50 @@
+# =============================================================================
+# Experiment: 11-class Strong MCLDNN-Differential-Attention
+# =============================================================================
+# Classes : All 11 RadioML2016.10a modulation classes
+# Model   : Higher-capacity differential-attention model
+# Purpose : Compare strong differential attention against strong attention and
+#           the 11-class LSTM baseline.
+# =============================================================================
+
+experiment:
+  name: "11class_diffattention_strong"
+  description: "Higher-capacity MCLDNN differential attention on all 11 RadioML2016.10a classes"
+  track: "attention_11class"
+  seed: 2016
+  model: "mcldnn_diffattention_strong"
+
+dataset:
+  path: "data/RML2016.10a_dict.pkl"
+  classes:
+    - "8PSK"
+    - "AM-DSB"
+    - "AM-SSB"
+    - "BPSK"
+    - "CPFSK"
+    - "GFSK"
+    - "PAM4"
+    - "QAM16"
+    - "QAM64"
+    - "QPSK"
+    - "WBFM"
+
+# Same split as the 11-class baseline and strong-attention run.
+shuffle_split: false
+
+training:
+  epochs: 10000
+  batch_size: 400
+  dropout_rate: 0.45
+  early_stopping_patience: 18
+  reduce_lr_patience: 7
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-7
+  initial_lr: 0.0005
+
+output:
+  base_dir:        "experiments/11class_diffattention_strong"
+  checkpoint_path: "experiments/11class_diffattention_strong/checkpoints/best_model.weights.h5"
+  log_dir:         "experiments/11class_diffattention_strong/logs"
+  figure_dir:      "experiments/11class_diffattention_strong/figures"
+  result_dir:      "experiments/11class_diffattention_strong/results"
